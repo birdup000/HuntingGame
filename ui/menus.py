@@ -21,45 +21,71 @@ class BaseMenu:
         self.app = app
         self.title = title
         self.frame = None
+        self.background = None
         self.elements = []
+        self.borders = []  # Initialize borders list
         self.visible = False
+        self.selected_button = None  # For accessibility
 
-        # Menu colors and styling
-        self.bg_color = (0.1, 0.1, 0.1, 0.9)
-        self.button_color = (0.2, 0.4, 0.6, 1)
-        self.button_hover_color = (0.3, 0.5, 0.7, 1)
-        self.text_color = (1, 1, 1, 1)
+        # Improved colors and styling with excellent contrast
+        self.bg_color = (0.02, 0.02, 0.04, 0.95)  # Very dark background for better contrast
+        self.button_color = (0.05, 0.1, 0.15, 1.0)  # Dark blue for better contrast
+        self.button_hover_color = (0.2, 0.3, 0.5, 1.0)  # Much brighter on hover
+        self.button_selected_color = (0.3, 0.5, 0.9, 1.0)  # Selected state - bright blue with white outline
+        self.text_color = (1.0, 1.0, 1.0, 1.0)  # Pure white for maximum readability
+        self.title_color = (1.0, 1.0, 1.0, 1.0)  # Pure white for titles - maximum contrast
+        self.border_color = (0.7, 0.8, 0.6, 0.0)  # Removed border
 
     def create_frame(self, width: float = 1.0, height: float = 1.0):
-        """Create the main menu frame."""
+        """Create the main menu frame with optional background."""
         self.frame = DirectFrame(
             frameColor=self.bg_color,
             frameSize=(-width/2, width/2, -height/2, height/2),
-            pos=(0, 0, 0)
+            pos=(0, 0, 0),
+            frameVisibleScale=(1, 1),
+            parent=self.app.render2d,
+            borderWidth=(0.005, 0.005)  # Minimal border to reduce interference
         )
         self.frame.hide()  # Start hidden
 
+    def add_frame_border(self, frame, width, height):
+        """Add a decorative border around the frame - simplified approach."""
+        # Remove border functionality to prevent layering issues
+        # Borders are handled by the main frame itself with better styling
+        pass
+
     def add_title(self, text: str, scale: float = 0.15, pos: tuple = (0, 0, 0.7)):
-        """Add a title to the menu."""
+        """Add a title to the menu with proper positioning."""
+        # Ensure we have a frame to parent to
+        if not self.frame:
+            self.create_frame()
+            
         title = OnscreenText(
             text=text,
             pos=pos,
             scale=scale,
-            fg=self.text_color,
-            align=TextNode.ACenter
+            fg=self.title_color,
+            align=TextNode.ACenter,
+            parent=self.frame,
+            mayChange=True
         )
         # Set font only if loader is available
         if hasattr(self.app, 'loader') and hasattr(self.app.loader, 'loadFont'):
             try:
-                title.setFont(self.app.loader.loadFont("cmss12"))
-            except:
+                title.setFont(self.app.loader.loadFont("cmss12.ttf"))
+            except Exception:
                 pass  # Use default font if cmss12 not available
         self.elements.append(title)
         return title
 
     def add_button(self, text: str, command: Callable, pos: tuple = (0, 0, 0),
                    scale: float = 0.1, extra_args: list = None):
-        """Add a button to the menu."""
+        """Add a button to the menu with proper positioning and styling."""
+        # Ensure we have a frame to parent to
+        if not self.frame:
+            # Create a temporary frame if none exists
+            self.create_frame()
+            
         button = DirectButton(
             text=text,
             command=command,
@@ -68,44 +94,74 @@ class BaseMenu:
             scale=scale,
             text_fg=self.text_color,
             frameColor=self.button_color,
-            frameSize=(-0.3, 0.3, -0.05, 0.05),
+            frameSize=(-0.4, 0.4, -0.08, 0.08),
             relief=1,
-            pressEffect=1
+            pressEffect=1,
+            borderWidth=(0.02, 0.02)  # Clear border for better button definition
         )
         button.setTransparency(TransparencyAttrib.MAlpha)
-
-        # Add hover effect with proper closure
-        def on_hover(*args):
-            if hasattr(self, 'button_hover_color'):
-                button['frameColor'] = self.button_hover_color
-        def on_leave(*args):
-            if hasattr(self, 'button_color'):
-                button['frameColor'] = self.button_color
-
-        # Store callbacks as attributes for re-binding if needed
-        button.on_hover = on_hover
-        button.on_leave = on_leave
         
-        button.bind('rollover', on_hover)
-        button.bind('rolloverExit', on_leave)
+        # Parent to the menu frame for proper layering
+        button.reparentTo(self.frame)
+
+        # Enhanced hover and focus effects with better visual feedback
+        def enhanced_hover(*args):
+            button['frameColor'] = self.button_hover_color
+            button['borderWidth'] = (0.04, 0.04)  # Thicker border on hover
+            button.setScale(scale * 1.05)  # Slight scale increase on hover
+            
+        def standard_leave(*args):
+            if self.selected_button != button:
+                button['frameColor'] = self.button_color
+                button['borderWidth'] = (0.02, 0.02)  # Restore normal border
+            button.setScale(scale)  # Return to normal size
+
+        def enhanced_focus(*args):
+            if hasattr(self, 'selected_button'):
+                # Reset previously selected button
+                if self.selected_button and self.selected_button != button:
+                    self.selected_button['frameColor'] = self.button_color
+                    self.selected_button['borderWidth'] = (0.02, 0.02)
+                    self.selected_button.setScale(scale)
+                self.selected_button = button
+                button['frameColor'] = self.button_selected_color
+                button['borderWidth'] = (0.06, 0.06)  # Thick border for selected
+                button.setScale(scale * 1.15)  # More obvious selected state
+                
+        # Enhanced release functions for button cleanup
+        # Store callbacks for cleanup
+        button.on_hover = enhanced_hover
+        button.on_leave = standard_leave 
+        button.on_focus = enhanced_focus
+        
+        # Connect the enhanced functions to events
+        button.bind('rollover', enhanced_hover)
+        button.bind('rolloverExit', standard_leave)
+        button.bind('focusIn', enhanced_focus)
 
         self.elements.append(button)
         return button
 
     def add_label(self, text: str, pos: tuple = (0, 0, 0), scale: float = 0.08):
-        """Add a text label to the menu."""
+        """Add a text label to the menu with proper positioning."""
+        # Ensure we have a frame to parent to
+        if not self.frame:
+            self.create_frame()
+            
         label = OnscreenText(
             text=text,
             pos=pos,
             scale=scale,
             fg=self.text_color,
-            align=TextNode.ACenter
+            align=TextNode.ACenter,
+            parent=self.frame,
+            mayChange=True
         )
         # Set font only if loader is available
         if hasattr(self.app, 'loader') and hasattr(self.app.loader, 'loadFont'):
             try:
-                label.setFont(self.app.loader.loadFont("cmss12"))
-            except:
+                label.setFont(self.app.loader.loadFont("cmss12.ttf"))
+            except Exception:
                 pass  # Use default font if cmss12 not available
         self.elements.append(label)
         return label
@@ -114,22 +170,131 @@ class BaseMenu:
         """Show the menu."""
         if self.frame:
             self.frame.show()
+        # Show any borders
+        if hasattr(self, 'borders'):
+            for border in self.borders:
+                border.show()
         for element in self.elements:
             if hasattr(element, 'show'):
                 element.show()
+        
+        # Set initial focus if available
+        self.setup_navigation()
         self.visible = True
 
+    def setup_navigation(self):
+        """Setup keyboard navigation for accessibility."""
+        # Find all buttons in elements
+        buttons = [elem for elem in self.elements if isinstance(elem, DirectButton)]
+        if buttons:
+            # Set focus on first button
+            self.selected_button = buttons[0] if hasattr(self, 'selected_button') else None
+            # Bind keyboard navigation in the app if not already bound
+            if hasattr(self.app, 'accept') and hasattr(self.app, 'ignore'):
+                # Only bind once - check if already bound
+                if not hasattr(self, '_nav_bound'):
+                    self.app.accept('arrow_up', self.select_previous)
+                    self.app.accept('arrow_down', self.select_next)
+                    self.app.accept('enter', self.activate_selection)
+                    self._nav_bound = True
+                    
+                    # Change focus style to show selection
+                    for button in buttons:
+                        button.bind('focusIn', button.on_focus)
+                            
+    def select_previous(self):
+        """Select the previous button with proper scaling."""
+        buttons = [elem for elem in self.elements if isinstance(elem, DirectButton)]
+        if self.selected_button and buttons:
+            try:
+                current_idx = buttons.index(self.selected_button)
+                new_idx = (current_idx - 1) % len(buttons)
+                # Reset previous button completely
+                self.selected_button['frameColor'] = self.button_color
+                self.selected_button['borderWidth'] = (0.02, 0.02)
+                self.selected_button.setScale(0.1)  # Reset scale
+                self.selected_button = buttons[new_idx]
+                # Highlight new selection with maximum visibility
+                self.selected_button['frameColor'] = self.button_selected_color
+                self.selected_button['borderWidth'] = (0.06, 0.06)
+                self.selected_button.setScale(0.1 * 1.15)  # Selected state is much larger
+            except (ValueError, IndexError):
+                if buttons:
+                    # Reset all buttons first
+                    for btn in buttons:
+                        btn['frameColor'] = self.button_color
+                        btn['borderWidth'] = (0.02, 0.02)
+                        btn.setScale(0.1)
+                    self.selected_button = buttons[0]
+                    self.selected_button['frameColor'] = self.button_selected_color
+                    self.selected_button['borderWidth'] = (0.06, 0.06)
+                    self.selected_button.setScale(0.1 * 1.15)
+
+    def select_next(self):
+        """Select the next button with proper scaling."""
+        buttons = [elem for elem in self.elements if isinstance(elem, DirectButton)]
+        if self.selected_button and buttons:
+            try:
+                current_idx = buttons.index(self.selected_button)
+                new_idx = (current_idx + 1) % len(buttons)
+                # Reset previous button completely
+                self.selected_button['frameColor'] = self.button_color
+                self.selected_button['borderWidth'] = (0.02, 0.02)
+                self.selected_button.setScale(0.1)  # Reset scale
+                self.selected_button = buttons[new_idx]
+                # Highlight new selection with maximum visibility
+                self.selected_button['frameColor'] = self.button_selected_color
+                self.selected_button['borderWidth'] = (0.06, 0.06)
+                self.selected_button.setScale(0.1 * 1.15)  # Selected state is much larger
+            except (ValueError, IndexError):
+                if buttons:
+                    # Reset all buttons first
+                    for btn in buttons:
+                        btn['frameColor'] = self.button_color
+                        btn['borderWidth'] = (0.02, 0.02)
+                        btn.setScale(0.1)
+                    self.selected_button = buttons[0]
+                    self.selected_button['frameColor'] = self.button_selected_color
+                    self.selected_button['borderWidth'] = (0.06, 0.06)
+                    self.selected_button.setScale(0.1 * 1.15)
+
+    def activate_selection(self):
+        """Activate the currently selected button."""
+        if self.selected_button:
+            self.selected_button.command(*self.selected_button.extraArgs)
+            
     def hide(self):
         """Hide the menu."""
         if self.frame:
             self.frame.hide()
+        # Hide any borders
+        if hasattr(self, 'borders'):
+            for border in self.borders:
+                border.hide()
         for element in self.elements:
             if hasattr(element, 'hide'):
                 element.hide()
+                
+        # Cleanup navigation bindings
+        if hasattr(self, '_nav_bound'):
+            if hasattr(self.app, 'ignore'):
+                self.app.ignore('arrow_up')
+                self.app.ignore('arrow_down') 
+                self.app.ignore('enter')
+            self._nav_bound = False
+            
         self.visible = False
+        self.selected_button = None
 
     def cleanup(self):
         """Clean up menu resources."""
+        # Clean up borders first
+        if hasattr(self, 'borders'):
+            for border in self.borders:
+                if hasattr(border, 'destroy'):
+                    border.destroy()
+            self.borders.clear()
+            
         for element in self.elements:
             if hasattr(element, 'destroy'):
                 element.destroy()
@@ -150,44 +315,43 @@ class MainMenu(BaseMenu):
         self.create_main_menu()
 
     def create_main_menu(self):
-        """Create the main menu layout."""
-        self.create_frame(1.2, 1.0)
+        """Create the main menu layout with clear hierarchy and spacing."""
+        self.create_frame(1.0, 1.2)  # Better responsive proportions
 
-        # Title
-        self.add_title("3D Hunting Simulator", scale=0.2, pos=(0, 0, 0.6))
+        # Main title - scaled properly to avoid clipping
+        self.add_title("3D HUNTING SIMULATOR", scale=0.22, pos=(0, 0, 0.55))
 
-        # Subtitle
-        self.add_label("Experience the thrill of the hunt", pos=(0, 0, 0.4), scale=0.06)
+        # Subtitle - better scaling and positioning to prevent truncation
+        self.add_label("Experience the thrill of the hunt", pos=(0, 0, 0.45), scale=0.07)
 
-        # Menu buttons
-        y_pos = 0.2
-        button_spacing = 0.15
+        # Clear separation before buttons
+        y_start = 0.18
+        button_spacing = 0.12  # Better spacing to prevent visual crowding
 
+        # Menu buttons with improved visual hierarchy
         self.add_button(
             "Start Game",
             self.on_start_game,
-            pos=(0, 0, y_pos),
-            scale=0.12
+            pos=(0, 0, y_start),
+            scale=0.11
         )
 
-        y_pos -= button_spacing
         self.add_button(
-            "Settings",
+            "Settings", 
             self.on_settings,
-            pos=(0, 0, y_pos),
-            scale=0.12
+            pos=(0, 0, y_start - button_spacing),
+            scale=0.1
         )
 
-        y_pos -= button_spacing
         self.add_button(
             "Quit Game",
             self.on_quit,
-            pos=(0, 0, y_pos),
-            scale=0.12
+            pos=(0, 0, y_start - (2 * button_spacing)),
+            scale=0.1
         )
 
-        # Version info
-        self.add_label("Version 1.0", pos=(0, 0, -0.4), scale=0.04)
+        # Version info - centered bottom with subtle styling
+        self.add_label("Version 1.0", pos=(0, 0, -0.5), scale=0.06)
 
 
 class PauseMenu(BaseMenu):
@@ -203,44 +367,41 @@ class PauseMenu(BaseMenu):
         self.create_pause_menu()
 
     def create_pause_menu(self):
-        """Create the pause menu layout."""
-        self.create_frame(0.8, 0.6)
+        """Create the pause menu layout with improved hierarchy."""
+        self.create_frame(1.0, 1.0)  # Taller frame for better proportions
 
-        # Title
-        self.add_title("Game Paused", scale=0.15, pos=(0, 0, 0.3))
+        # Title at top with more prominence
+        self.add_title("Game Paused", scale=0.22, pos=(0, 0, 0.45))
 
-        # Menu buttons
-        y_pos = 0.1
+        # Menu buttons with improved spacing and alignment
+        y_start = 0.15
         button_spacing = 0.12
 
         self.add_button(
             "Resume",
             self.on_resume,
-            pos=(0, 0, y_pos),
+            pos=(0, 0, y_start),
             scale=0.1
         )
 
-        y_pos -= button_spacing
         self.add_button(
             "Restart",
             self.on_restart,
-            pos=(0, 0, y_pos),
+            pos=(0, 0, y_start - button_spacing),
             scale=0.1
         )
 
-        y_pos -= button_spacing
         self.add_button(
             "Main Menu",
             self.on_main_menu,
-            pos=(0, 0, y_pos),
+            pos=(0, 0, y_start - (2 * button_spacing)),
             scale=0.1
         )
 
-        y_pos -= button_spacing
         self.add_button(
             "Quit Game",
             self.on_quit,
-            pos=(0, 0, y_pos),
+            pos=(0, 0, y_start - (3 * button_spacing)),
             scale=0.1
         )
 
@@ -261,40 +422,38 @@ class GameOverMenu(BaseMenu):
 
     def create_game_over_menu(self):
         """Create the game over menu layout."""
-        self.create_frame(1.0, 0.8)
+        self.create_frame(1.2, 1.0)  # Larger frame for better presentation
 
         # Title
-        self.add_title("Game Over", scale=0.18, pos=(0, 0, 0.4))
+        self.add_title("Game Over", scale=0.22, pos=(0, 0, 0.4))
 
-        # Score display
-        self.score_label = self.add_label("Score: 0", pos=(0, 0, 0.2), scale=0.1)
-        self.kills_label = self.add_label("Kills: 0", pos=(0, 0, 0.1), scale=0.08)
-        self.accuracy_label = self.add_label("Accuracy: 0%", pos=(0, 0, 0.0), scale=0.08)
+        # Score display with better spacing
+        self.score_label = self.add_label("Score: 0", pos=(0, 0, 0.15), scale=0.12)
+        self.kills_label = self.add_label("Kills: 0", pos=(0, 0, 0.02), scale=0.09)
+        self.accuracy_label = self.add_label("Accuracy: 0%", pos=(0, 0, -0.1), scale=0.09)
 
         # Menu buttons
-        y_pos = -0.15
+        y_start = -0.25
         button_spacing = 0.12
 
         self.add_button(
             "Play Again",
             self.on_restart,
-            pos=(0, 0, y_pos),
+            pos=(0, 0, y_start),
             scale=0.1
         )
 
-        y_pos -= button_spacing
         self.add_button(
             "Main Menu",
             self.on_main_menu,
-            pos=(0, 0, y_pos),
+            pos=(0, 0, y_start - button_spacing),
             scale=0.1
         )
 
-        y_pos -= button_spacing
         self.add_button(
             "Quit Game",
             self.on_quit,
-            pos=(0, 0, y_pos),
+            pos=(0, 0, y_start - (2 * button_spacing)),
             scale=0.1
         )
 
@@ -326,17 +485,17 @@ class SettingsMenu(BaseMenu):
 
     def create_settings_menu(self):
         """Create the settings menu layout."""
-        self.create_frame(1.0, 0.9)
+        self.create_frame(1.2, 1.0)  # Larger frame for settings
 
-        # Title
-        self.add_title("Settings", scale=0.15, pos=(0, 0, 0.4))
+        # Title - large and centered
+        self.add_title("Settings", scale=0.22, pos=(0, 0, 0.4))
 
-        # Settings options
+        # Settings options - better organized layout
         y_pos = 0.2
-        spacing = 0.15
+        spacing = 0.11
 
         # Volume slider
-        self.add_label("Master Volume", pos=(-0.3, 0, y_pos), scale=0.07)
+        self.add_label("Master Volume", pos=(-0.3, 0, y_pos), scale=0.08)
         self.sliders['volume'] = DirectSlider(
             pos=(0.2, 0, y_pos),
             scale=0.3,
@@ -346,10 +505,11 @@ class SettingsMenu(BaseMenu):
             command=self._on_volume_change,
             extraArgs=['volume']
         )
+        self.sliders['volume'].reparentTo(self.frame)  # Parent to frame instead
 
         y_pos -= spacing
         # Mouse sensitivity slider
-        self.add_label("Mouse Sensitivity", pos=(-0.3, 0, y_pos), scale=0.07)
+        self.add_label("Mouse Sensitivity", pos=(-0.3, 0, y_pos), scale=0.08)
         self.sliders['sensitivity'] = DirectSlider(
             pos=(0.2, 0, y_pos),
             scale=0.3,
@@ -359,35 +519,38 @@ class SettingsMenu(BaseMenu):
             command=self._on_sensitivity_change,
             extraArgs=['sensitivity']
         )
+        self.sliders['sensitivity'].reparentTo(self.frame)  # Parent to frame instead
 
         y_pos -= spacing
         # Fullscreen checkbox
         self.check_buttons['fullscreen'] = DirectCheckButton(
             text="Fullscreen",
             pos=(-0.3, 0, y_pos),
-            scale=0.08,
+            scale=0.09,
             indicatorValue=self.settings.get('fullscreen', False),
             command=self._on_fullscreen_toggle,
             extraArgs=['fullscreen']
         )
+        self.check_buttons['fullscreen'].reparentTo(self.frame)  # Parent to frame instead
 
         y_pos -= spacing
         # VSync checkbox
         self.check_buttons['vsync'] = DirectCheckButton(
             text="VSync",
             pos=(-0.3, 0, y_pos),
-            scale=0.08,
+            scale=0.09,
             indicatorValue=self.settings.get('vsync', True),
             command=self._on_vsync_toggle,
             extraArgs=['vsync']
         )
+        self.check_buttons['vsync'].reparentTo(self.frame)  # Parent to frame instead
 
         # Back button
         self.add_button(
             "Back",
             self._on_settings_back,
-            pos=(0, 0, -0.3),
-            scale=0.1
+            pos=(0, 0, -0.4),
+            scale=0.12
         )
 
     def get_settings(self) -> Dict[str, Any]:
@@ -532,36 +695,63 @@ class UIManager:
             callbacks.get('quit', lambda: None)
         )
 
-        self.settings_menu = SettingsMenu(
-            self.app,
-            callbacks.get('back_to_main', lambda: None),
-            callbacks.get('settings_data', {})
-        )
+        # Settings menu created later to avoid conflicts
+        # self.settings_menu = SettingsMenu(
+        #     self.app,
+        #     callbacks.get('back_to_main', lambda: None),
+        #     callbacks.get('settings_data', {})
+        # )
 
     def show_menu(self, menu_type: str):
-        """Show a specific menu and hide others."""
-        # Hide current menu
-        if self.current_menu:
-            self.current_menu.hide()
+        """Show a specific menu and hide others - with proper cleanup."""
+        
+        # First, completely hide all menus to prevent overlap
+        self.hide_menus()
 
         # Show requested menu
         if menu_type == 'main':
-            self.current_menu = self.main_menu
+            if self.main_menu:
+                self.current_menu = self.main_menu
         elif menu_type == 'pause':
-            self.current_menu = self.pause_menu
+            if self.pause_menu:
+                self.current_menu = self.pause_menu
         elif menu_type == 'game_over':
-            self.current_menu = self.game_over_menu
+            if self.game_over_menu:
+                self.current_menu = self.game_over_menu
         elif menu_type == 'settings':
+            # Create settings menu if not already created
+            if self.settings_menu is None:
+                from .menus import SettingsMenu
+                self.settings_menu = SettingsMenu(
+                    self.app,
+                    self.callbacks.get('back_to_main', lambda: None),
+                    self.callbacks.get('settings_data', {})
+                )
             self.current_menu = self.settings_menu
+        else:
+            print(f"Invalid menu type: {menu_type}")
+            return
 
+        # Show the new menu
         if self.current_menu:
             self.current_menu.show()
+            print(f"Showing {menu_type} menu")
+        else:
+            print(f"Warning: {menu_type} menu not available")
 
     def hide_menus(self):
         """Hide all menus."""
+        # Hide current menu and reset
         if self.current_menu:
             self.current_menu.hide()
-            self.current_menu = None
+        self.current_menu = None
+        
+        # Also hide individual menus to ensure cleanup
+        menus = [self.main_menu, self.pause_menu, self.game_over_menu, self.settings_menu]
+        for menu in menus:
+            if menu and menu.visible:
+                menu.hide()
+        print("All menus hidden")
 
     def update_hud(self, dt: float):
         """Update HUD elements."""

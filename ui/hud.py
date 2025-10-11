@@ -53,6 +53,9 @@ class HUD:
             self.screen = pygame.Surface(window_size, pygame.SRCALPHA)
             self.font = pygame.font.SysFont('Arial', 24)
 
+            # Test font creation to ensure it works
+            test_text = self.font.render("Test", True, (255, 255, 255))
+            
             print("Pygame initialized for HUD rendering")
         except Exception as e:
             print(f"Failed to initialize Pygame: {e}")
@@ -61,74 +64,107 @@ class HUD:
     def setup_hud_elements(self):
         """Set up HUD display elements using Panda3D's GUI system."""
 
-        # Health display
+        # Create font with error handling
+        def load_default_font():
+            """Load a default font safely."""
+            if hasattr(self.app, 'loader') and hasattr(self.app.loader, 'loadFont'):
+                try:
+                    return self.app.loader.loadFont("cmss12.ttf")
+                except Exception:
+                    return None  # Let OnscreenText use default font
+            return None
+
+        loaded_font = load_default_font()
+
+        # Health display - FIXED positioning and parenting
         self.health_text = OnscreenText(
             text="Health: 100",
-            pos=(-1.3, 0.9),
+            pos=(-1.1, 0.8),
             scale=0.07,
             fg=(1, 1, 1, 1),
             align=TextNode.ALeft,
-            font=self.app.loader.loadFont("cmss12")
+            parent=self.app.render2d,  # Use render2d for proper depth
+            mayChange=True
         )
+        if loaded_font:
+            self.health_text.setFont(loaded_font)
 
-        # Ammo display
+        # Ammo display - FIXED positioning and parenting
         self.ammo_text = OnscreenText(
             text="Ammo: 10/10",
-            pos=(1.0, 0.9),
+            pos=(1.1, 0.8),
             scale=0.07,
             fg=(1, 1, 1, 1),
             align=TextNode.ARight,
-            font=self.app.loader.loadFont("cmss12")
+            parent=self.app.render2d,  # Use render2d for proper depth
+            mayChange=True
         )
+        if loaded_font:
+            self.ammo_text.setFont(loaded_font)
 
-        # Score display
+        # Score display - FIXED positioning and parenting
         self.score_text = OnscreenText(
             text="Score: 0",
-            pos=(-1.3, 0.8),
+            pos=(-1.1, 0.7),
             scale=0.06,
             fg=(1, 0.8, 0, 1),
             align=TextNode.ALeft,
-            font=self.app.loader.loadFont("cmss12")
+            parent=self.app.render2d,  # Use render2d for proper depth
+            mayChange=True
         )
+        if loaded_font:
+            self.score_text.setFont(loaded_font)
 
-        # Accuracy display
+        # Accuracy display - FIXED positioning and parenting
         self.accuracy_text = OnscreenText(
             text="Accuracy: 0%",
-            pos=(1.0, 0.8),
+            pos=(1.1, 0.7),
             scale=0.06,
             fg=(0.8, 0.8, 0.8, 1),
             align=TextNode.ARight,
-            font=self.app.loader.loadFont("cmss12")
+            parent=self.app.render2d,  # Use render2d for proper depth
+            mayChange=True
         )
+        if loaded_font:
+            self.accuracy_text.setFont(loaded_font)
 
-        # Weapon info display
+        # Weapon info display - FIXED positioning and parenting
         self.weapon_text = OnscreenText(
             text="Hunting Rifle",
-            pos=(0, -0.9),
+            pos=(0, -0.95),
             scale=0.05,
             fg=(1, 1, 1, 1),
             align=TextNode.ACenter,
-            font=self.app.loader.loadFont("cmss12")
+            parent=self.app.render2d,  # Use render2d for proper depth
+            mayChange=True
         )
+        if loaded_font:
+            self.weapon_text.setFont(loaded_font)
 
         # Create crosshair using CardMaker
         self.create_crosshair()
 
     def create_crosshair(self):
         """Create a crosshair using Panda3D's CardMaker."""
-        cm = CardMaker('crosshair')
+        try:
+            cm = CardMaker('crosshair')
 
-        # Horizontal line
-        cm.setFrame(-0.02, 0.02, -0.002, 0.002)
-        self.crosshair_h = self.app.aspect2d.attachNewNode(cm.generate())
-        self.crosshair_h.setColor(1, 1, 1, 0.8)
-        self.crosshair_h.setTransparency(TransparencyAttrib.MAlpha)
+            # Horizontal line
+            cm.setFrame(-0.02, 0.02, -0.002, 0.002)
+            self.crosshair_h = self.app.render2d.attachNewNode(cm.generate())
+            self.crosshair_h.setColor(1, 1, 1, 0.8)
+            self.crosshair_h.setTransparency(TransparencyAttrib.MAlpha)
 
-        # Vertical line
-        cm.setFrame(-0.002, 0.002, -0.02, 0.02)
-        self.crosshair_v = self.app.aspect2d.attachNewNode(cm.generate())
-        self.crosshair_v.setColor(1, 1, 1, 0.8)
-        self.crosshair_v.setTransparency(TransparencyAttrib.MAlpha)
+            # Vertical line
+            cm.setFrame(-0.002, 0.002, -0.02, 0.02)
+            self.crosshair_v = self.app.render2d.attachNewNode(cm.generate())
+            self.crosshair_v.setColor(1, 1, 1, 0.8)
+            self.crosshair_v.setTransparency(TransparencyAttrib.MAlpha)
+        except Exception as e:
+            # Crosshair creation failed, set placeholders
+            self.crosshair_h = None
+            self.crosshair_v = None
+            print(f"Crosshair creation failed: {e}")
 
     def update(self, dt: float):
         """Update HUD elements with current game state."""
@@ -159,7 +195,7 @@ class HUD:
             self.accuracy_text.setText("Accuracy: 0%")
 
         # Update crosshair color based on weapon state
-        if hasattr(self.player, 'weapon'):
+        if hasattr(self.player, 'weapon') and self.crosshair_h and self.crosshair_v:
             if self.player.weapon.reloading:
                 self.crosshair_h.setColor(1, 0, 0, 0.8)  # Red when reloading
                 self.crosshair_v.setColor(1, 0, 0, 0.8)
@@ -202,16 +238,25 @@ class HUD:
 
     def show_message(self, message: str, duration: float = 3.0, color: Tuple[float, float, float, float] = (1, 1, 1, 1)):
         """Display a temporary message on screen."""
-        # Create temporary text node
+        # Create temporary text node with proper parenting
         temp_text = OnscreenText(
             text=message,
-            pos=(0, 0.7),
+            pos=(0, 0.4),
             scale=0.08,
             fg=color,
             align=TextNode.ACenter,
-            font=self.app.loader.loadFont("cmss12")
+            parent=self.app.render2d,  # Use render2d for proper depth
+            mayChange=True
         )
-
+        
+        # Set font if available
+        if hasattr(self.app, 'loader') and hasattr(self.app.loader, 'loadFont'):
+            try:
+                font = self.app.loader.loadFont("cmss12.ttf")
+                temp_text.setFont(font)
+            except Exception:
+                pass  # Use default font
+        
         # Schedule removal
         def remove_message():
             temp_text.destroy()
@@ -220,22 +265,28 @@ class HUD:
 
     def toggle_visibility(self, visible: bool = True):
         """Toggle HUD visibility."""
+        # Toggle 2D elements
         if visible:
             self.health_text.show()
             self.ammo_text.show()
             self.score_text.show()
             self.accuracy_text.show()
             self.weapon_text.show()
-            self.crosshair_h.show()
-            self.crosshair_v.show()
         else:
             self.health_text.hide()
             self.ammo_text.hide()
             self.score_text.hide()
             self.accuracy_text.hide()
             self.weapon_text.hide()
-            self.crosshair_h.hide()
-            self.crosshair_v.hide()
+            
+        # Toggle crosshair if it exists
+        if self.crosshair_h and self.crosshair_v:
+            if visible:
+                self.crosshair_h.show()
+                self.crosshair_v.show()
+            else:
+                self.crosshair_h.hide()
+                self.crosshair_v.hide()
 
     def cleanup(self):
         """Clean up HUD resources."""
@@ -250,9 +301,11 @@ class HUD:
             self.accuracy_text.destroy()
         if hasattr(self, 'weapon_text'):
             self.weapon_text.destroy()
-        if hasattr(self, 'crosshair_h'):
+            
+        # Clean up crosshair if it exists
+        if hasattr(self, 'crosshair_h') and self.crosshair_h:
             self.crosshair_h.removeNode()
-        if hasattr(self, 'crosshair_v'):
+        if hasattr(self, 'crosshair_v') and self.crosshair_v:
             self.crosshair_v.removeNode()
 
         # Clean up Pygame

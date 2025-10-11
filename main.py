@@ -13,7 +13,26 @@ class MainApp(ShowBase):
 
     def __init__(self):
         """Initialize the Panda3D application and game."""
+        # Set window properties for better branding
+        from config import GAME_CONFIG
         ShowBase.__init__(self)
+        
+        # Note: Window title can be set via Config.prc configuration file if needed
+        
+        # ENSURE clean 2D rendering to prevent UI distortion
+        self.setFrameRateMeter(False)  # Hide FPS in final build
+        self.render2d.setDepthTest(False)  # Prevent 3D interaction with 2D
+        self.render2d.setDepthWrite(False)  # Ensure 2D elements don't write to depth buffer
+        
+        # Set up proper render-to-2D separation
+        if hasattr(self, 'render'):
+            self.render.setDepthTest(True)  # Enable depth test for 3D
+            self.render.setDepthWrite(True)  # Enable depth writing for 3D
+            
+        # Additional cleanup - ensure no stray debug visualization
+        self.disableAllAudio()  # Prevent debug sounds
+        
+        # Initialize game after engine setup
         self.game = Game(self)
         self.game.start()
 

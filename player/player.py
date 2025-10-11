@@ -44,7 +44,7 @@ class Weapon:
 
     def reload(self, current_time: float) -> bool:
         """Start reloading if not already reloading."""
-        if self.reloading or self.current_ammo == self.max_ammo:
+        if self.reloading or (self.current_ammo == self.max_ammo and self.max_ammo > 0):
             return False
 
         self.reloading = True
@@ -99,26 +99,31 @@ class Player:
         else:
             print("Warning: Loader or render not available - running in headless mode")
 
-        # Collision setup
-        self.collision_node = CollisionNode('player')
-        self.collision_node.addSolid(CollisionSphere(0, 0, 0, 0.5))
+        # Collision setup (only if controls are enabled)
         self.collision_np = None
         self.collision_traverser = None
         self.collision_handler = None
+        self.collision_manager = None
 
-        if self.model is not None:
-            self.collision_np = self.model.attachNewNode(self.collision_node)
-            self.collision_traverser = CollisionTraverser('player_traverser')
-            self.collision_handler = CollisionHandlerQueue()
-            self.collision_traverser.addCollider(self.collision_np, self.collision_handler)
-        else:
-            print("Warning: Collision system not available - model not loaded")
+        if setup_controls:
+            self.collision_node = CollisionNode('player')
+            self.collision_node.addSolid(CollisionSphere(0, 0, 0, 0.5))
+            
+            if self.model is not None:
+                self.collision_np = self.model.attachNewNode(self.collision_node)
+                self.collision_traverser = CollisionTraverser('player_traverser')
+                self.collision_handler = CollisionHandlerQueue()
+                self.collision_traverser.addCollider(self.collision_np, self.collision_handler)
+            else:
+                print("Warning: Collision system not available - model not loaded")
 
-        # Weapon and shooting setup
+            # Weapon and shooting setup
+            self.collision_manager = CollisionManager(app)
+            self.collision_manager.add_hit_callback(self.on_projectile_hit)
+
+        # Weapon and shooting setup (always available)
         self.weapon = Weapon("Hunting Rifle", fire_rate=0.5, damage=25.0, projectile_speed=150.0, max_ammo=10)
         self.projectiles: List[Projectile] = []
-        self.collision_manager = CollisionManager(app)
-        self.collision_manager.add_hit_callback(self.on_projectile_hit)
 
         # Input setup
         if setup_controls:
@@ -283,7 +288,8 @@ class Player:
                 active_projectiles.append(projectile)
             else:
                 # Remove from collision manager before cleanup
-                self.collision_manager.remove_projectile(projectile)
+                if self.collision_manager:
+                    self.collision_manager.remove_projectile(projectile)
                 projectile.cleanup()
 
         self.projectiles = active_projectiles
@@ -320,11 +326,13 @@ class Player:
 
     def add_animal_to_collision(self, animal):
         """Add an animal to collision detection."""
-        self.collision_manager.add_animal(animal)
+        if self.collision_manager:
+            self.collision_manager.add_animal(animal)
 
     def remove_animal_from_collision(self, animal):
         """Remove an animal from collision detection."""
-        self.collision_manager.remove_animal(animal)
+        if self.collision_manager:
+            self.collision_manager.remove_animal(animal)
 
     def cleanup(self):
         """Clean up player resources."""
@@ -336,9 +344,11 @@ class Player:
 
         # Clean up projectiles
         for projectile in self.projectiles:
-            self.collision_manager.remove_projectile(projectile)
+            if self.collision_manager:
+                self.collision_manager.remove_projectile(projectile)
             projectile.cleanup()
         self.projectiles.clear()
 
         # Clean up collision manager
-        self.collision_manager.cleanup()
+        if self.collision_manager:
+            self.collision_manager.cleanup()
