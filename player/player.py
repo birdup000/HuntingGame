@@ -70,7 +70,9 @@ class Player:
     def __init__(self, app, setup_controls=True):
         """Initialize the player with the Panda3D application."""
         self.app = app
-        self.position = Point3(0, 0, 1)  # Starting position
+        # Start above terrain height to avoid clipping
+        terrain_height = self.get_terrain_height(0, 0)
+        self.position = Point3(0, 0, terrain_height + 1.8)  # 1.8 units above terrain (more natural height)
         self.velocity = Vec3(0, 0, 0)
         self.move_speed = 10.0
         self.mouse_sensitivity = 0.2
@@ -220,14 +222,27 @@ class Player:
 
         # Update position
         self.position += move_dir
+        
+        # Prevent player from going below terrain
+        terrain_height = self.get_terrain_height(self.position.getX(), self.position.getY())
+        if self.position.getZ() < terrain_height + 1.3:  # Player height
+            self.position.setZ(terrain_height + 1.3)
+            
         if self.model is not None:
             self.model.setPos(self.position)
 
         # Update camera position to follow player
         if self.camera_node is not None:
             camera_offset = self.camera_node.getQuat().getForward() * -self.camera_distance
-            camera_offset.setZ(2)  # Keep camera at eye level
-            self.camera_node.setPos(self.position + camera_offset)
+            camera_offset.setZ(1.5)  # Keep camera at more natural eye level
+            camera_pos = self.position + camera_offset
+            
+            # Prevent camera from going below terrain
+            terrain_height = self.get_terrain_height(camera_pos.getX(), camera_pos.getY())
+            if camera_pos.getZ() < terrain_height + 0.5:  # Keep 0.5m above terrain
+                camera_pos.setZ(terrain_height + 0.5)
+            
+            self.camera_node.setPos(camera_pos)
 
         # Basic collision detection
         if self.collision_traverser is not None and hasattr(self.app, 'render'):
@@ -235,10 +250,25 @@ class Player:
             if self.collision_handler.getNumEntries() > 0:
                 # Simple collision response - prevent movement into obstacles
                 self.position -= move_dir
+                # Ensure player stays above terrain after collision response
+                terrain_height = self.get_terrain_height(self.position.getX(), self.position.getY())
+                if self.position.getZ() < terrain_height + 1.3:
+                    self.position.setZ(terrain_height + 1.3)
+                    
                 if self.model is not None:
                     self.model.setPos(self.position)
                 if self.camera_node is not None:
-                    self.camera_node.setPos(self.position + camera_offset)
+                    # Re-calculate camera position after collision response
+                    camera_offset = self.camera_node.getQuat().getForward() * -self.camera_distance
+                    camera_offset.setZ(1.5)
+                    camera_pos = self.position + camera_offset
+                    
+                    # Ensure camera stays above terrain
+                    terrain_height = self.get_terrain_height(camera_pos.getX(), camera_pos.getY())
+                    if camera_pos.getZ() < terrain_height + 0.5:
+                        camera_pos.setZ(terrain_height + 0.5)
+                    
+                    self.camera_node.setPos(camera_pos)
 
         # Update weapon reload
         if hasattr(self.app, 'taskMgr') and self.app.taskMgr is not None:
@@ -333,6 +363,27 @@ class Player:
         """Remove an animal from collision detection."""
         if self.collision_manager:
             self.collision_manager.remove_animal(animal)
+
+    def get_terrain_height(self, x: float, y: float) -> float:
+        """Get terrain height at given coordinates using ray casting."""
+        try:
+            # Try to get height from terrain if available
+            if hasattr(self.app, 'game') and hasattr(self.app.game, 'terrain'):
+                return self.app.game.terrain.get_height(x, y)
+            
+            # Fallback: check if there are terrain height functions available
+            import sys
+            if 'environment.terrain' in sys.modules:
+                # Try direct terrain access
+                for obj in sys.modules['environment.terrain'].__dict__.values():
+                    if hasattr(obj, 'get_height'):
+                        return obj.get_height(x, y)
+            
+            # Default fallback
+            return 1.0
+        except (AttributeError, Exception):
+            # Simple fallback
+            return 1.0
 
     def cleanup(self):
         """Clean up player resources."""

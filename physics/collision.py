@@ -48,8 +48,14 @@ class Projectile:
 
     def cleanup(self):
         """Clean up projectile resources."""
+        # CollisionNode doesn't need explicit cleanup - it's removed when the NodePath is removed
+        # Only clear references
         if hasattr(self, 'collision_node'):
-            self.collision_node.removeNode()
+            self.collision_node = None
+        if hasattr(self, 'collision_np'):
+            self.collision_np = None
+        if hasattr(self, 'collision_id'):
+            self.collision_id = None
 
 
 class CollisionManager:

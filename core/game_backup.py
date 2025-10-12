@@ -346,7 +346,7 @@ class Game:
         # This method kept for backward compatibility
         pass
 
-    def _apply_terrain_materials(self):
+def _apply_terrain_materials(self):
         """Apply PBR materials to terrain based on height and conditions."""
         if not self.terrain or not self.terrain.terrain_node:
             return
@@ -370,7 +370,7 @@ class Game:
         
         print("PBR materials applied to terrain")
 
-    def _setup_grass_fields(self):
+def _setup_grass_fields(self):
         """Create and position grass fields for enhanced realism."""
         terrain_cfg = config.TERRAIN_CONFIG
         
@@ -398,7 +398,7 @@ class Game:
         
         print(f"Created {len(field_configs)} grass fields with {sum(c['density'] for c in field_configs)} grass blades")
 
-    def update(self, task):
+def update(self, task):
         """Update game state each frame."""
         if not self.is_running:
             return task.done
@@ -453,7 +453,7 @@ class Game:
 
         return task.cont
         
-    def _update_graphics_systems(self, dt):
+def _update_graphics_systems(self, dt):
         """Update advanced graphics systems for photorealistic rendering."""
         if not hasattr(self, 'game_time'):
             self.game_time = 0.0
@@ -477,8 +477,31 @@ class Game:
         fog_density = fog_effect.density if fog_effect else 0
         # Already handled above
         self.dynamic_lighting.adjust_for_weather(rain_intensity, fog_density)
+        
+        # Update terrain LOD and materials
+        if self.player and self.terrain:
+            player_pos = self.player.position
+            self.terrain_renderer.update_lod(player_pos)
+            
+            # Update terrain materials based on weather
+            if self.weather_system.current_weather == 'rain':
+                self.terrain.apply_dynamic_materials(player_pos)
+        
+        # Update foliage systems
+        self.foliage_renderer.update(dt, self.game_time)
+        
+        # Track player movement for interactive foliage
+        if self.player:
+            player_pos = self.player.position
+            player_speed = getattr(self.player, 'velocity', Vec3(0, 0, 0)).length()
+            self.foliage_renderer.player_moved(player_pos, player_speed)
+            
+        # Track animal movement for interactive foliage
+        for animal in self.animals:
+            if not animal.is_dead():
+                self.foliage_renderer.animal_moved(animal.position, getattr(animal, 'species', 'unknown'))
 
-    def stop(self):
+def stop(self):
         """Stop the game loop."""
         self.is_running = False
         if self.player:

@@ -43,6 +43,8 @@ class Animal(ABC):
         self.target_position: Optional[Vec3] = None
         self.state_timer = 0.0
         self.state_duration = 3.0  # How long to stay in current state
+        # Height offset to keep animals above terrain
+        self.height_offset = 0.5
 
     @abstractmethod
     def create_model(self) -> GeomNode:
@@ -51,7 +53,7 @@ class Animal(ABC):
 
     def create_basic_shape(self, size: float, color: Vec4) -> GeomNode:
         """
-        Create a basic geometric shape for the animal model.
+        Create a basic geometric shape for the animal model with better visibility.
 
         Args:
             size: Size of the shape
@@ -60,7 +62,7 @@ class Animal(ABC):
         Returns:
             GeomNode containing the basic shape
         """
-        # Create a simple cube as placeholder
+        # Create a bright, more visible shape
         format = GeomVertexFormat.getV3n3c4()
         vdata = GeomVertexData('animal', format, Geom.UHStatic)
 
@@ -68,35 +70,47 @@ class Animal(ABC):
         normal = GeomVertexWriter(vdata, 'normal')
         color_writer = GeomVertexWriter(vdata, 'color')
 
-        # Cube vertices
+        # Create a cone shape (like an arrow) pointing up for better visibility
         vertices = [
-            (-size, -size, -size), (-size, -size, size), (-size, size, -size), (-size, size, size),
-            (size, -size, -size), (size, -size, size), (size, size, -size), (size, size, size)
+            # Cone base (square)
+            (-size, -size, -size * 0.5), (size, -size, -size * 0.5), (size, size, -size * 0.5), (-size, size, -size * 0.5),
+            # Cone tip
+            (0, 0, size * 1.5)
+        ]
+
+        # Normals pointing outward
+        normals = [
+            (0, 0, -1), (0, 0, -1), (0, 0, -1), (0, 0, -1),  # Base
+            (1, 1, 1), (1, -1, 1), (-1, -1, 1), (-1, 1, 1), (0, 0, 1)  # Sides
         ]
 
         # Add vertices, normals, and colors
-        for v in vertices:
+        for i, v in enumerate(vertices):
             vertex.addData3f(*v)
-            normal.addData3f(0, 0, 1)  # Simple normal
-            color_writer.addData4f(*color)
+            normal_index = min(i, len(normals) - 1)
+            normal.addData3f(*normals[normal_index])
+            # Make colors slightly brighter for visibility
+            bright_color = Vec4(min(1.0, color.x * 1.3), min(1.0, color.y * 1.3), min(1.0, color.z * 1.3), color.w)
+            color_writer.addData4f(*bright_color)
 
-        # Create triangles
+        # Create triangles for cone
         geom = Geom(vdata)
         prim = GeomTriangles(Geom.UHStatic)
 
-        # Cube faces
-        faces = [
-            (0, 1, 3), (0, 3, 2),  # left
-            (4, 6, 7), (4, 7, 5),  # right
-            (0, 4, 5), (0, 5, 1),  # bottom
-            (2, 3, 7), (2, 7, 6),  # top
-            (0, 2, 6), (0, 6, 4),  # front
-            (1, 5, 7), (1, 7, 3)   # back
-        ]
+        # Base triangle
+        prim.addVertex(0)
+        prim.addVertex(1)
+        prim.addVertex(2)
+        prim.addVertex(0)
+        prim.addVertex(2)
+        prim.addVertex(3)
 
-        for face in faces:
-            for vertex_index in face:
-                prim.addVertex(vertex_index)
+        # Side triangles
+        for i in range(4):
+            next_i = (i + 1) % 4
+            prim.addVertex(4)  # Tip
+            prim.addVertex(i)
+            prim.addVertex(next_i)
 
         geom.addPrimitive(prim)
 
@@ -117,7 +131,9 @@ class Animal(ABC):
         """
         animal_geom = self.create_model()
         self.node = parent_node.attachNewNode(animal_geom)
-        self.node.setPos(self.position)
+        # Add height offset to prevent terrain clipping
+        display_pos = Vec3(self.position.x, self.position.y, self.position.z + self.height_offset)
+        self.node.setPos(display_pos)
 
         return self.node
 
@@ -169,7 +185,9 @@ class Animal(ABC):
 
         # Update node position if rendered
         if self.node:
-            self.node.setPos(self.position)
+            # Keep animal above terrain
+            display_pos = Vec3(self.position.x, self.position.y, self.position.z + self.height_offset)
+            self.node.setPos(display_pos)
 
     def _change_state(self):
         """Randomly change to a new state."""
@@ -280,8 +298,8 @@ class Deer(Animal):
         self.flee_range = 40.0
 
     def create_model(self) -> GeomNode:
-        """Create deer model (simplified as colored cube)."""
-        return self.create_basic_shape(1.5, Vec4(0.6, 0.4, 0.2, 1.0))  # Brown color
+        """Create deer model (larger, more visible shape)."""
+        return self.create_basic_shape(2.5, Vec4(0.5, 0.3, 0.1, 1.0))  # Larger, richer brown
 
 
 class Rabbit(Animal):
@@ -294,5 +312,5 @@ class Rabbit(Animal):
         self.flee_range = 20.0
 
     def create_model(self) -> GeomNode:
-        """Create rabbit model (simplified as colored cube)."""
-        return self.create_basic_shape(0.8, Vec4(0.8, 0.8, 0.8, 1.0))  # Gray color
+        """Create rabbit model (larger, more visible shape)."""
+        return self.create_basic_shape(1.8, Vec4(0.7, 0.6, 0.5, 1.0))  # Larger, natural tan color

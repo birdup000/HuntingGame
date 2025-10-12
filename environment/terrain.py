@@ -32,7 +32,7 @@ class Terrain:
 
     def generate_terrain(self) -> np.ndarray:
         """
-        Generate height map using multi-octave noise.
+        Generate height map using multi-octave noise with improved realism.
 
         Returns:
             2D numpy array representing height values
@@ -45,7 +45,11 @@ class Terrain:
                 nx = x / self.width - 0.5
                 ny = y / self.height - 0.5
 
-                # Multi-octave noise
+                # Distance from center for terrain shaping
+                distance = np.sqrt(nx * nx + ny * ny)
+                center_weight = max(0, 1 - distance * 1.3)  # Hills near center, flatter edges
+
+                # Multi-octave noise with terrain shaping
                 amplitude = 1.0
                 frequency = 1.0
                 value = 0.0
@@ -55,8 +59,9 @@ class Terrain:
                     amplitude *= 0.5
                     frequency *= 2.0
 
-                # Scale and offset the height
-                self.height_map[x, y] = value * 10.0  # Scale height
+                # Apply erosion-like effect and scale
+                value = value * center_weight  # Mountains in center, valleys at edges
+                self.height_map[x, y] = value * 15.0 + distance * 3.0  # More dramatic terrain
 
         return self.height_map
 
@@ -139,15 +144,19 @@ class Terrain:
 
                 normal.addData3f(normal_x, normal_y, normal_z)
 
-                # Color based on height (simple biome coloring)
+                # Color based on height (realistic biome coloring)
                 if world_z < 2.0:
-                    color.addData4f(0.2, 0.4, 0.8, 1.0)  # Water
-                elif world_z < 5.0:
-                    color.addData4f(0.3, 0.7, 0.3, 1.0)  # Grass
+                    color.addData4f(0.2, 0.4, 0.8, 1.0)  # Deep water
+                elif world_z < 4.0:
+                    color.addData4f(0.1, 0.5, 0.1, 1.0)  # Grass (natural green)
+                elif world_z < 6.0:
+                    color.addData4f(0.4, 0.28, 0.15, 1.0)  # Dirt (earth tone)
                 elif world_z < 8.0:
-                    color.addData4f(0.4, 0.3, 0.2, 1.0)  # Dirt
+                    color.addData4f(0.25, 0.2, 0.1, 1.0)  # Forest (darker green-brown)
+                elif world_z < 10.0:
+                    color.addData4f(0.2, 0.15, 0.1, 1.0)  # Mountain (dark brown)
                 else:
-                    color.addData4f(0.8, 0.8, 0.8, 1.0)  # Snow
+                    color.addData4f(0.95, 0.95, 0.95, 1.0)  # Snow (pure white)
 
                 # Texture coordinates
                 texcoord.addData2f(x / self.width, y / self.height)
