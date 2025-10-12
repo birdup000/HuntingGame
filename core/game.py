@@ -7,9 +7,10 @@ from direct.showbase.ShowBase import ShowBase
 from direct.task import Task
 from player.player import Player
 from environment.pbr_terrain import PBRTerrain, OptimizedTerrainRenderer
+from environment.sky import SkyDome
 from animals.animal import Deer, Rabbit
 from ui.menus import UIManager, SettingsMenu
-from panda3d.core import Vec3
+from panda3d.core import Vec3, CardMaker, TransparencyAttrib
 import random
 import config
 
@@ -32,6 +33,9 @@ class Game:
         self.last_time = 0
         self.ui_manager = None
         self.game_state = 'main_menu'  # main_menu, playing, paused, game_over
+        self.game_time = 0.0
+        self.sky = None
+        self.rocks = []
         
         # Initialize advanced graphics systems
         self.terrain_pbr = TerrainPBR()
@@ -106,12 +110,17 @@ class Game:
 
         # Set up advanced grass fields
         self._setup_grass_fields()
+        self._setup_tree_clusters()
+        self._spawn_rock_formations()
         
         # Spawn animals using config values
         self.spawn_animals()
 
         # Set up collision detection after animals are created
         self.setup_collision_detection()
+
+        if not self.sky:
+            self.sky = SkyDome(self.app)
 
     def setup_ui(self):
         """Initialize the UI system."""
@@ -392,11 +401,58 @@ class Game:
             # Position fields around the map
             positions = [(30, 30), (-30, 20), (0, -25)]
             if i < len(positions):
-                field.generate_field()
-                field.grass_node.setPos(positions[i][0], positions[i][1], 0)
                 self.foliage_renderer.add_grass_field(field)
+                if getattr(field, 'grass_node', None):
+                    field.grass_node.setPos(positions[i][0], positions[i][1], 0)
         
         print(f"Created {len(field_configs)} grass fields with {sum(c['density'] for c in field_configs)} grass blades")
+
+    def _setup_tree_clusters(self):
+        positions = [
+            (Vec3(25, 32, 0), 8, 12),
+            (Vec3(-28, 18, 0), 6, 10),
+            (Vec3(-10, -35, 0), 10, 15)
+        ]
+        for center, count, radius in positions:
+            if self.terrain:
+                z = self.terrain.get_height(center.x, center.y)
+                center.setZ(z)
+            self.foliage_renderer.create_tree_cluster(center, count, radius, self.terrain)
+
+    def _spawn_rock_formations(self):
+        if not hasattr(self.app, 'loader'):
+            return
+        rock_positions = [
+            Vec3(12, 18, 0),
+            Vec3(-22, -15, 0),
+            Vec3(18, -28, 0)
+        ]
+        # Cleanup existing rocks before creating new ones
+        for rock in self.rocks:
+            rock.removeNode()
+        self.rocks = []
+
+        try:
+            base_model = self.app.loader.loadModel('models/misc/sphere')
+        except Exception:
+            base_model = None
+
+        for pos in rock_positions:
+            z = self.terrain.get_height(pos.x, pos.y) if self.terrain else 0
+            if base_model:
+                rock = base_model.copyTo(self.app.render)
+            else:
+                cm = CardMaker('rock-card')
+                cm.setFrame(-0.6, 0.6, -0.6, 0.6)
+                rock = self.app.render.attachNewNode('rock')
+                quad = rock.attachNewNode(cm.generate())
+                quad.setBillboardPointEye()
+                quad.setTransparency(TransparencyAttrib.MAlpha)
+            rock.setPos(pos.x, pos.y, z)
+            rock.setScale(2.5 + random.uniform(-0.8, 1.2))
+            rock.setColor(0.38 + random.uniform(-0.05, 0.05), 0.37, 0.35, 1.0)
+            rock.setShaderAuto()
+            self.rocks.append(rock)
 
     def update(self, task):
         """Update game state each frame."""
@@ -415,6 +471,7 @@ class Game:
         if self.game_state == 'playing':
             # Update advanced graphics systems
             self._update_graphics_systems(dt)
+            self.foliage_renderer.update(dt, self.game_time)
             
             # Update game components
             if self.player:
@@ -492,6 +549,14 @@ class Game:
         # Clean up terrain
         if self.terrain:
             self.terrain.cleanup()
+
+        # Clean up sky and props
+        if self.sky:
+            self.sky.cleanup()
+            self.sky = None
+        for rock in self.rocks:
+            rock.removeNode()
+        self.rocks = []
 
         # Clean up UI
         if self.ui_manager:

@@ -2,13 +2,16 @@
 Dynamic foliage system with realistic wind physics and detailed rendering.
 """
 
+import math
 import random
 from panda3d.core import (
-    NodePath, TransformState, LVector3, Vec3, LVecBase3,
+    CardMaker, NodePath, TransformState, LVector3, Vec3, LVecBase3,
     GeomNode, GeomVertexFormat, GeomVertexData, Geom, GeomVertexWriter,
-    GeomTriangles, GeomVertexReader
+    GeomTriangles, GeomVertexReader, TransparencyAttrib
 )
 from direct.task import Task
+
+from graphics.texture_factory import create_bark_texture, create_leaf_texture
 
 
 class WindPhysics:
@@ -165,6 +168,45 @@ class GrassField:
                 blade.setColorScale(0.1, 0.4 + abs(math.sin(time * 0.001)) * 0.1, 0.05, 1)
 
 
+class TreeFactory:
+    """Procedural tree generator with billboarding for foliage."""
+
+    def __init__(self, render_node):
+        self.render = render_node
+        self.leaf_texture = create_leaf_texture()
+        self.bark_texture = create_bark_texture()
+
+    def create_tree(self, position: Vec3, scale: float = 1.0) -> NodePath:
+        tree_root = self.render.attachNewNode('tree')
+        trunk_height = 4.0 * scale
+        trunk_radius = 0.22 * scale
+
+        for heading in (0, 45, 90, 135):
+            cm = CardMaker('branch_panel')
+            cm.setFrame(-trunk_radius, trunk_radius, 0, trunk_height)
+            trunk_panel = tree_root.attachNewNode(cm.generate())
+            trunk_panel.setH(heading)
+            trunk_panel.setTexture(self.bark_texture, 1)
+            trunk_panel.setTwoSided(True)
+
+        canopy = tree_root.attachNewNode('leaf_cluster')
+        canopy.setZ(trunk_height * 0.85)
+        leaf_radius = 2.2 * scale
+
+        for heading in (0, 60, 120):
+            cm = CardMaker('leaf_panel')
+            cm.setFrame(-leaf_radius, leaf_radius, -leaf_radius, leaf_radius)
+            leaf_card = canopy.attachNewNode(cm.generate())
+            leaf_card.setH(heading)
+            leaf_card.setTexture(self.leaf_texture, 1)
+            leaf_card.setTransparency(TransparencyAttrib.MAlpha)
+            leaf_card.setTwoSided(True)
+
+        tree_root.setPos(position)
+        tree_root.setShaderAuto()
+        return tree_root
+
+
 class TreeFoliage:
     """Individual tree with animated leaves and branches."""
     
@@ -228,11 +270,13 @@ class InteractiveFoliage:
         
     def add_foliage(self, node_path, trigger_distance=3.0):
         """Add a foliage object that responds to movement."""
-        node_path.foliage_settings = {
+        settings = {
             'trigger_distance': trigger_distance,
             'bend_amount': 0,
             'recovery_speed': 2.0
         }
+        node_path.setPythonTag('foliage_settings', settings)
+        node_path.setPythonTag('current_bend', 0.0)
         self.foliage_objects.append(node_path)
         
     def add_collision_event(self, position, intensity, duration=1.0):
@@ -274,20 +318,22 @@ class InteractiveFoliage:
                 strength = max(0, (10 - distance) / 10 * event['intensity'])
                 
                 # Apply animation
-                current_bend = getattr(foliage, 'current_bend', 0)
+                current_bend = foliage.getPythonTag('current_bend') or 0.0
                 new_bend = max(current_bend + strength, 0)
-                foliage.current_bend = min(new_bend, 1.0)
+                foliage.setPythonTag('current_bend', min(new_bend, 1.0))
                 
     def _update_foliage_recovery(self, foliage, dt):
         """Update foliage spring-back animation."""
-        if hasattr(foliage, 'current_bend'):
-            recovery = foliage.foliage_settings['recovery_speed'] * dt
-            foliage.current_bend = max(0, foliage.current_bend - recovery)
+        settings = foliage.getPythonTag('foliage_settings') or {'recovery_speed': 2.0}
+        current_bend = foliage.getPythonTag('current_bend') or 0.0
+        recovery = settings.get('recovery_speed', 2.0) * dt
+        current_bend = max(0, current_bend - recovery)
+        foliage.setPythonTag('current_bend', current_bend)
             
-            # Apply visual effect
-            if foliage.current_bend > 0:
-                angle = foliage.current_bend * 15  # Max 15 degrees
-                self._apply_bend_animation(foliage, angle)
+        # Apply visual effect
+        if current_bend > 0:
+            angle = current_bend * 15  # Max 15 degrees
+            self._apply_bend_animation(foliage, angle)
                 
     def _apply_bend_animation(self, foliage, angle):
         """Apply visual bending to foliage."""
@@ -304,6 +350,7 @@ class FoliageRenderer:
         self.grass_fields = []
         self.trees = []
         self.interactive_foliage = InteractiveFoliage(render_node)
+        self.tree_factory = TreeFactory(render_node)
         
     def add_grass_field(self, field):
         """Add a grass field to the renderer."""
@@ -314,6 +361,19 @@ class FoliageRenderer:
         """Add a tree with animated foliage."""
         tree_foliage = TreeFoliage(tree_node)
         self.trees.append(tree_foliage)
+
+    def create_tree_cluster(self, center, count, radius, terrain=None):
+        for _ in range(count):
+            angle = random.uniform(0, 2 * math.pi)
+            distance = random.uniform(radius * 0.2, radius)
+            x = center.x + math.cos(angle) * distance
+            y = center.y + math.sin(angle) * distance
+            z = center.z
+            if terrain:
+                z = terrain.get_height(x, y)
+            tree = self.tree_factory.create_tree(Vec3(x, y, z), scale=random.uniform(0.85, 1.3))
+            self.add_tree(tree)
+            self.interactive_foliage.add_foliage(tree)
         
     def add_interactive_object(self, node_path):
         """Add an object that should respond to movement."""

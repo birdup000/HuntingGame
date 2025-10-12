@@ -6,12 +6,12 @@ Supports photorealistic terrain with multiple material zones and weather effects
 import numpy as np
 from opensimplex import OpenSimplex
 from panda3d.core import (
-    Geom, GeomNode, GeomVertexData, GeomVertexFormat, GeomVertexWriter, 
-    GeomTriangles, Vec3, Vec4, NodePath, Texture, TextureStage, ColorWriteAttrib,
-    AlphaTestAttrib, Material
+    Geom, GeomNode, GeomVertexData, GeomVertexFormat, GeomVertexWriter,
+    GeomTriangles, Vec3, Vec4, NodePath, TextureStage, Material
 )
 from graphics.materials import TerrainPBR, EnvironmentMaterials
 import math
+from graphics.texture_factory import create_terrain_texture
 
 
 class PBRTerrain:
@@ -25,6 +25,7 @@ class PBRTerrain:
         self.noise = OpenSimplex(seed=42)
         self.height_map = None
         self.terrain_node = None
+        self.terrain_texture = None
         
         # PBR terrain materials
         self.terrain_pbr = TerrainPBR()
@@ -60,6 +61,8 @@ class PBRTerrain:
                     height -= 2.0 + abs(self._river_depth(x, y)) * 1.5
                 
                 self.height_map[x, y] = max(height * 3, -1.0)  # clamp minimum
+
+        self.terrain_texture = create_terrain_texture(self.height_map)
     
     def _apply_erosion_filter(self, x, y, height):
         """Simulate erosion for more natural terrain."""
@@ -163,11 +166,17 @@ class PBRTerrain:
         
         # Create node and apply materials
         terrain_node = NodePath('terrain')
-        
+
         # Create a GeomNode and attach the geom to it
         terrain_gnode = GeomNode('terrain_gnode')
         terrain_gnode.addGeom(geom)
         terrain_node_path = terrain_node.attachNewNode(terrain_gnode)
+
+        if self.terrain_texture:
+            terrain_node_path.setTexture(self.terrain_texture, 1)
+            texture_stage = TextureStage.getDefault()
+            tile_scale = max(self.width, self.height) / 16.0
+            terrain_node_path.setTexScale(texture_stage, tile_scale, tile_scale)
         
         return terrain_node
     

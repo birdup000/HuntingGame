@@ -5,10 +5,14 @@ Handles heads-up display elements like health, ammo, crosshair, and score.
 
 import pygame
 from typing import Optional, Tuple
-from panda3d.core import Vec4, Vec3, Point3, TextNode, CardMaker, TextureStage, TransparencyAttrib
+
+from panda3d.core import Vec4, TextNode, TransparencyAttrib
+from direct.gui.DirectGui import DirectFrame
 from direct.gui.OnscreenText import OnscreenText
 from direct.gui.OnscreenImage import OnscreenImage
 from direct.task import Task
+
+from graphics.texture_factory import create_crosshair_texture
 
 
 class HUD:
@@ -32,12 +36,14 @@ class HUD:
         self.setup_pygame()
 
         # Create HUD elements
+        self.hud_panels = []
         self.setup_hud_elements()
 
         # Crosshair settings
-        self.crosshair_size = 20
-        self.crosshair_color = (255, 255, 255, 200)
-        self.crosshair_thickness = 2
+        self.crosshair_image: Optional[OnscreenImage] = None
+        self.crosshair_color_ready = Vec4(0.95, 0.95, 0.95, 1.0)
+        self.crosshair_color_empty = Vec4(1.0, 0.65, 0.2, 1.0)
+        self.crosshair_color_reload = Vec4(1.0, 0.25, 0.25, 1.0)
 
     def setup_pygame(self):
         """Initialize Pygame for 2D UI rendering."""
@@ -76,94 +82,129 @@ class HUD:
 
         loaded_font = load_default_font()
 
-        # Health display - FIXED positioning and parenting
+        hud_parent = getattr(self.app, 'aspect2d', getattr(self.app, 'render2d', None))
+        if hud_parent is None:
+            raise RuntimeError("HUD requires a Panda3D application with aspect2d or render2d")
+
+        panel_color = (0.05, 0.07, 0.09, 0.72)
+        accent_color = (1.0, 0.8, 0.35, 1.0)
+
+        self.left_panel = DirectFrame(
+            parent=hud_parent,
+            frameColor=panel_color,
+            frameSize=(-0.55, 0.45, -0.22, 0.2),
+            pos=(-0.95, 0, 0.84)
+        )
+        self.left_panel.setTransparency(TransparencyAttrib.MAlpha)
+
+        self.right_panel = DirectFrame(
+            parent=hud_parent,
+            frameColor=panel_color,
+            frameSize=(-0.55, 0.45, -0.22, 0.2),
+            pos=(0.95, 0, 0.84)
+        )
+        self.right_panel.setTransparency(TransparencyAttrib.MAlpha)
+
+        self.weapon_panel = DirectFrame(
+            parent=hud_parent,
+            frameColor=(0.05, 0.05, 0.07, 0.68),
+            frameSize=(-0.45, 0.45, -0.14, 0.14),
+            pos=(0, 0, -0.88)
+        )
+        self.weapon_panel.setTransparency(TransparencyAttrib.MAlpha)
+        self.hud_panels = [self.left_panel, self.right_panel, self.weapon_panel]
+
         self.health_text = OnscreenText(
             text="Health: 100",
-            pos=(-1.1, 0.8),
-            scale=0.07,
+            pos=(-0.48, 0.08),
+            scale=0.06,
             fg=(1, 1, 1, 1),
             align=TextNode.ALeft,
-            parent=self.app.render2d,  # Use render2d for proper depth
+            parent=self.left_panel,
             mayChange=True
         )
         if loaded_font:
             self.health_text.setFont(loaded_font)
 
-        # Ammo display - FIXED positioning and parenting
-        self.ammo_text = OnscreenText(
-            text="Ammo: 10/10",
-            pos=(1.1, 0.8),
-            scale=0.07,
-            fg=(1, 1, 1, 1),
-            align=TextNode.ARight,
-            parent=self.app.render2d,  # Use render2d for proper depth
-            mayChange=True
-        )
-        if loaded_font:
-            self.ammo_text.setFont(loaded_font)
-
-        # Score display - FIXED positioning and parenting
         self.score_text = OnscreenText(
             text="Score: 0",
-            pos=(-1.1, 0.7),
-            scale=0.06,
-            fg=(1, 0.8, 0, 1),
+            pos=(-0.48, -0.04),
+            scale=0.055,
+            fg=(accent_color[0], accent_color[1], accent_color[2], 1.0),
             align=TextNode.ALeft,
-            parent=self.app.render2d,  # Use render2d for proper depth
+            parent=self.left_panel,
             mayChange=True
         )
         if loaded_font:
             self.score_text.setFont(loaded_font)
 
-        # Accuracy display - FIXED positioning and parenting
+        self.ammo_text = OnscreenText(
+            text="Ammo: 10/10",
+            pos=(-0.48, 0.08),
+            scale=0.06,
+            fg=(1, 1, 1, 1),
+            align=TextNode.ARight,
+            parent=self.right_panel,
+            mayChange=True
+        )
+        if loaded_font:
+            self.ammo_text.setFont(loaded_font)
+
         self.accuracy_text = OnscreenText(
             text="Accuracy: 0%",
-            pos=(1.1, 0.7),
-            scale=0.06,
-            fg=(0.8, 0.8, 0.8, 1),
+            pos=(-0.48, -0.04),
+            scale=0.055,
+            fg=(0.82, 0.84, 0.88, 1),
             align=TextNode.ARight,
-            parent=self.app.render2d,  # Use render2d for proper depth
+            parent=self.right_panel,
             mayChange=True
         )
         if loaded_font:
             self.accuracy_text.setFont(loaded_font)
 
-        # Weapon info display - FIXED positioning and parenting
         self.weapon_text = OnscreenText(
             text="Hunting Rifle",
-            pos=(0, -0.95),
-            scale=0.05,
+            pos=(0, 0.03),
+            scale=0.06,
             fg=(1, 1, 1, 1),
             align=TextNode.ACenter,
-            parent=self.app.render2d,  # Use render2d for proper depth
+            parent=self.weapon_panel,
             mayChange=True
         )
         if loaded_font:
             self.weapon_text.setFont(loaded_font)
 
-        # Create crosshair using CardMaker
+        self.weapon_status_text = OnscreenText(
+            text="Ready",
+            pos=(0, -0.06),
+            scale=0.045,
+            fg=(0.75, 0.78, 0.84, 1),
+            align=TextNode.ACenter,
+            parent=self.weapon_panel,
+            mayChange=True
+        )
+        if loaded_font:
+            self.weapon_status_text.setFont(loaded_font)
+
         self.create_crosshair()
 
     def create_crosshair(self):
         """Create a crosshair using Panda3D's CardMaker."""
         try:
-            cm = CardMaker('crosshair')
-
-            # Horizontal line
-            cm.setFrame(-0.02, 0.02, -0.002, 0.002)
-            self.crosshair_h = self.app.render2d.attachNewNode(cm.generate())
-            self.crosshair_h.setColor(1, 1, 1, 0.8)
-            self.crosshair_h.setTransparency(TransparencyAttrib.MAlpha)
-
-            # Vertical line
-            cm.setFrame(-0.002, 0.002, -0.02, 0.02)
-            self.crosshair_v = self.app.render2d.attachNewNode(cm.generate())
-            self.crosshair_v.setColor(1, 1, 1, 0.8)
-            self.crosshair_v.setTransparency(TransparencyAttrib.MAlpha)
+            texture = create_crosshair_texture()
+            parent = getattr(self.app, 'render2d', None)
+            if parent is None:
+                return
+            self.crosshair_image = OnscreenImage(
+                image=texture,
+                pos=(0, 0, 0),
+                scale=0.055,
+                parent=parent
+            )
+            self.crosshair_image.setTransparency(TransparencyAttrib.MAlpha)
+            self.crosshair_image.setColorScale(1, 1, 1, 1)
         except Exception as e:
-            # Crosshair creation failed, set placeholders
-            self.crosshair_h = None
-            self.crosshair_v = None
+            self.crosshair_image = None
             print(f"Crosshair creation failed: {e}")
 
     def update(self, dt: float):
@@ -183,6 +224,14 @@ class HUD:
 
             # Update weapon name
             self.weapon_text.setText(self.player.weapon.name)
+            if self.player.weapon.reloading:
+                self.weapon_status_text.setText("Reloading")
+            elif current_ammo == 0:
+                self.weapon_status_text.setText("Empty")
+            else:
+                self.weapon_status_text.setText("Ready")
+        else:
+            self.weapon_status_text.setText("Unarmed")
 
         # Update score display
         self.score_text.setText(f"Score: {self.score}")
@@ -195,16 +244,13 @@ class HUD:
             self.accuracy_text.setText("Accuracy: 0%")
 
         # Update crosshair color based on weapon state
-        if hasattr(self.player, 'weapon') and self.crosshair_h and self.crosshair_v:
-            if self.player.weapon.reloading:
-                self.crosshair_h.setColor(1, 0, 0, 0.8)  # Red when reloading
-                self.crosshair_v.setColor(1, 0, 0, 0.8)
-            elif self.player.weapon.current_ammo == 0:
-                self.crosshair_h.setColor(1, 0.5, 0, 0.8)  # Orange when out of ammo
-                self.crosshair_v.setColor(1, 0.5, 0, 0.8)
+        if self.crosshair_image:
+            if hasattr(self.player, 'weapon') and self.player.weapon.reloading:
+                self.crosshair_image.setColorScale(self.crosshair_color_reload)
+            elif hasattr(self.player, 'weapon') and self.player.weapon.current_ammo == 0:
+                self.crosshair_image.setColorScale(self.crosshair_color_empty)
             else:
-                self.crosshair_h.setColor(1, 1, 1, 0.8)  # White when ready
-                self.crosshair_v.setColor(1, 1, 1, 0.8)
+                self.crosshair_image.setColorScale(self.crosshair_color_ready)
 
         # Render Pygame overlay if available
         if self.pygame_initialized:
@@ -265,28 +311,18 @@ class HUD:
 
     def toggle_visibility(self, visible: bool = True):
         """Toggle HUD visibility."""
-        # Toggle 2D elements
-        if visible:
-            self.health_text.show()
-            self.ammo_text.show()
-            self.score_text.show()
-            self.accuracy_text.show()
-            self.weapon_text.show()
-        else:
-            self.health_text.hide()
-            self.ammo_text.hide()
-            self.score_text.hide()
-            self.accuracy_text.hide()
-            self.weapon_text.hide()
-            
-        # Toggle crosshair if it exists
-        if self.crosshair_h and self.crosshair_v:
+        if hasattr(self, 'hud_panels'):
+            for panel in self.hud_panels:
+                if visible:
+                    panel.show()
+                else:
+                    panel.hide()
+
+        if self.crosshair_image:
             if visible:
-                self.crosshair_h.show()
-                self.crosshair_v.show()
+                self.crosshair_image.show()
             else:
-                self.crosshair_h.hide()
-                self.crosshair_v.hide()
+                self.crosshair_image.hide()
 
     def cleanup(self):
         """Clean up HUD resources."""
@@ -301,12 +337,19 @@ class HUD:
             self.accuracy_text.destroy()
         if hasattr(self, 'weapon_text'):
             self.weapon_text.destroy()
+        if hasattr(self, 'weapon_status_text'):
+            self.weapon_status_text.destroy()
             
+        if hasattr(self, 'hud_panels'):
+            for panel in self.hud_panels:
+                if panel:
+                    panel.destroy()
+            self.hud_panels = []
+
         # Clean up crosshair if it exists
-        if hasattr(self, 'crosshair_h') and self.crosshair_h:
-            self.crosshair_h.removeNode()
-        if hasattr(self, 'crosshair_v') and self.crosshair_v:
-            self.crosshair_v.removeNode()
+        if hasattr(self, 'crosshair_image') and self.crosshair_image:
+            self.crosshair_image.destroy()
+            self.crosshair_image = None
 
         # Clean up Pygame
         if self.pygame_initialized:

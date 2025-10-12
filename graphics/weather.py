@@ -317,3 +317,6 @@ WEATHER_PRESETS = {
     'snow': {'visibility': 250, 'temperature': 5, 'precipitation': 0.7},
     'storm': {'visibility': 150, 'temperature': 12, 'precipitation': 0.9}
 }
+
+# Backwards-compatible alias for tests and external modules
+PRESETS = WEATHER_PRESETS

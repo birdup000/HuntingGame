@@ -7,6 +7,59 @@ from graphics.materials import MATERIAL_PRESETS
 import os
 
 
+PRESETS = {
+    'low': {
+        'texture_quality': 'low',
+        'shadow_quality': 'low',
+        'draw_distance': 500,
+        'use_pbr': False,
+        'bloom_enabled': False,
+        'ssao_enabled': False,
+        'volumetric_fog': False,
+        'dynamic_weather': False,
+        'foliage_wind': False,
+        'fxaa': True
+    },
+    'medium': {
+        'texture_quality': 'medium',
+        'shadow_quality': 'medium',
+        'draw_distance': 750,
+        'use_pbr': True,
+        'bloom_enabled': True,
+        'ssao_enabled': False,
+        'volumetric_fog': True,
+        'dynamic_weather': True,
+        'foliage_wind': True,
+        'fxaa': True
+    },
+    'high': {
+        'texture_quality': 'high',
+        'shadow_quality': 'medium',
+        'draw_distance': 1000,
+        'use_pbr': True,
+        'bloom_enabled': True,
+        'ssao_enabled': True,
+        'volumetric_fog': True,
+        'dynamic_weather': True,
+        'foliage_wind': True,
+        'fxaa': True
+    },
+    'ultra': {
+        'texture_quality': 'high',
+        'shadow_quality': 'high',
+        'draw_distance': 1500,
+        'use_pbr': True,
+        'bloom_enabled': True,
+        'ssao_enabled': True,
+        'volumetric_fog': True,
+        'dynamic_weather': True,
+        'foliage_wind': True,
+        'fxaa': True,
+        'motion_blur_enabled': True
+    }
+}
+
+
 class GraphicsSettingsManager:
     """Manages graphics settings and quality levels."""
     
@@ -25,60 +78,8 @@ class GraphicsSettingsManager:
         
     def set_quality_preset(self, quality_level):
         """Apply graphics preset (low, medium, high, ultra)."""
-        presets = {
-            'low': {
-                'texture_quality': 'low',
-                'shadow_quality': 'low',
-                'draw_distance': 500,
-                'use_pbr': False,
-                'bloom_enabled': False,
-                'ssao_enabled': False,
-                'volumetric_fog': False,
-                'dynamic_weather': False,
-                'foliage_wind': False,
-                'fxaa': True
-            },
-            'medium': {
-                'texture_quality': 'medium',
-                'shadow_quality': 'medium',
-                'draw_distance': 750,
-                'use_pbr': True,
-                'bloom_enabled': True,
-                'ssao_enabled': False,
-                'volumetric_fog': True,
-                'dynamic_weather': True,
-                'foliage_wind': True,
-                'fxaa': True
-            },
-            'high': {
-                'texture_quality': 'high',
-                'shadow_quality': 'medium',
-                'draw_distance': 1000,
-                'use_pbr': True,
-                'bloom_enabled': True,
-                'ssao_enabled': True,
-                'volumetric_fog': True,
-                'dynamic_weather': True,
-                'foliage_wind': True,
-                'fxaa': True
-            },
-            'ultra': {
-                'texture_quality': 'high',
-                'shadow_quality': 'high',
-                'draw_distance': 1500,
-                'use_pbr': True,
-                'bloom_enabled': True,
-                'ssao_enabled': True,
-                'volumetric_fog': True,
-                'dynamic_weather': True,
-                'foliage_wind': True,
-                'fxaa': True,
-                'motion_blur_enabled': True
-            }
-        }
-        
-        if quality_level in presets:
-            for key, value in presets[quality_level].items():
+        if quality_level in PRESETS:
+            for key, value in PRESETS[quality_level].items():
                 self.settings[key] = value
                 
             self.current_quality = quality_level
