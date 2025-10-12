@@ -99,11 +99,14 @@ class Player:
         else:
             print("Warning: Loader or render not available - running in headless mode")
 
+        # Collision setup (always needed for projectiles)
+        self.collision_manager = CollisionManager(app)
+        self.collision_manager.add_hit_callback(self.on_projectile_hit)
+
         # Collision setup (only if controls are enabled)
         self.collision_np = None
         self.collision_traverser = None
         self.collision_handler = None
-        self.collision_manager = None
 
         if setup_controls:
             self.collision_node = CollisionNode('player')
@@ -116,10 +119,6 @@ class Player:
                 self.collision_traverser.addCollider(self.collision_np, self.collision_handler)
             else:
                 print("Warning: Collision system not available - model not loaded")
-
-            # Weapon and shooting setup
-            self.collision_manager = CollisionManager(app)
-            self.collision_manager.add_hit_callback(self.on_projectile_hit)
 
         # Weapon and shooting setup (always available)
         self.weapon = Weapon("Hunting Rifle", fire_rate=0.5, damage=25.0, projectile_speed=150.0, max_ammo=10)
@@ -184,8 +183,8 @@ class Player:
             mouse_y = self.app.mouseWatcherNode.getMouseY()
 
             # Rotate camera based on mouse movement
-            self.camera_node.setH(self.camera_node.getH() - mouse_x * 100 * self.mouse_sensitivity)
-            self.camera_node.setP(self.camera_node.getP() - mouse_y * 100 * self.mouse_sensitivity)
+            self.camera_node.setH(self.camera_node.getH() - mouse_x * 100 * self.mouse_sensitivity)  # Horizontal: inverted for natural feel
+            self.camera_node.setP(self.camera_node.getP() + mouse_y * 100 * self.mouse_sensitivity)  # Vertical: fix inverted Y
 
             # Clamp pitch to prevent flipping
             if self.camera_node.getP() > 90:
@@ -246,7 +245,8 @@ class Player:
             self.weapon.update_reload(self.app.taskMgr.globalClock.getFrameTime())
 
         # Update collision detection
-        self.collision_manager.update()
+        if self.collision_manager:
+            self.collision_manager.update()
 
         # Update projectiles
         self.update_projectiles(dt)
