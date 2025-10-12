@@ -5,10 +5,25 @@ Handles animal AI, behavior, and basic 3D models.
 
 from abc import ABC, abstractmethod
 from enum import Enum
-from typing import Tuple, Optional
-from panda3d.core import NodePath, Vec3, LVecBase3f, GeomNode, Geom, GeomVertexData, GeomVertexFormat, GeomVertexWriter, GeomTriangles, Vec4
+from typing import Optional, Tuple, Union
+from panda3d.core import (
+    CardMaker,
+    Geom,
+    GeomNode,
+    GeomTriangles,
+    GeomVertexData,
+    GeomVertexFormat,
+    GeomVertexWriter,
+    LVecBase3f,
+    NodePath,
+    TransparencyAttrib,
+    Vec3,
+    Vec4,
+)
 import math
 import random
+
+from graphics.texture_factory import create_track_texture
 
 
 class AnimalState(Enum):
@@ -45,9 +60,13 @@ class Animal(ABC):
         self.state_duration = 3.0  # How long to stay in current state
         # Height offset to keep animals above terrain
         self.height_offset = 0.5
+        self.render_node: Optional[NodePath] = None
+        self.tracks: list[NodePath] = []
+        self.track_spacing = 1.6
+        self._distance_since_track = 0.0
 
     @abstractmethod
-    def create_model(self) -> GeomNode:
+    def create_model(self) -> Union[GeomNode, NodePath]:
         """Create the 3D model for this animal. Must be implemented by subclasses."""
         pass
 
@@ -119,6 +138,80 @@ class Animal(ABC):
 
         return node
 
+    def _create_box_geom(self, length: float, width: float, height: float, color: Vec4, name: str = 'box') -> GeomNode:
+        """Create a simple box geometry for modular animal construction."""
+        half_l = length / 2.0
+        half_w = width / 2.0
+        half_h = height / 2.0
+
+        format = GeomVertexFormat.getV3n3c4()
+        vdata = GeomVertexData(f'{name}_vdata', format, Geom.UHStatic)
+        vertex = GeomVertexWriter(vdata, 'vertex')
+        normal = GeomVertexWriter(vdata, 'normal')
+        color_writer = GeomVertexWriter(vdata, 'color')
+
+        vertices = [
+            (-half_w, -half_l, -half_h),
+            (half_w, -half_l, -half_h),
+            (half_w, half_l, -half_h),
+            (-half_w, half_l, -half_h),
+            (-half_w, -half_l, half_h),
+            (half_w, -half_l, half_h),
+            (half_w, half_l, half_h),
+            (-half_w, half_l, half_h),
+        ]
+
+        normals = [
+            (0, 0, -1),
+            (0, 0, 1),
+            (0, -1, 0),
+            (0, 1, 0),
+            (-1, 0, 0),
+            (1, 0, 0),
+        ]
+
+        faces = [
+            (0, 1, 2, 3, 0),  # bottom
+            (4, 5, 6, 7, 1),  # top
+            (0, 1, 5, 4, 2),  # back
+            (2, 3, 7, 6, 3),  # front
+            (0, 3, 7, 4, 4),  # left
+            (1, 2, 6, 5, 5),  # right
+        ]
+
+        for v in vertices:
+            vertex.addData3f(*v)
+        for _ in vertices:
+            normal.addData3f(0, 0, 1)  # placeholder, will overwrite
+        for _ in vertices:
+            color_writer.addData4f(color.x, color.y, color.z, color.w)
+
+        # Update normals per face
+        normal_writer = GeomVertexWriter(vdata, 'normal')
+        normals_per_vertex = [Vec3(0, 0, 0) for _ in vertices]
+        counts = [0] * len(vertices)
+        for a, b, c, d, normal_index in faces:
+            nx, ny, nz = normals[normal_index]
+            for idx in (a, b, c, d):
+                normals_per_vertex[idx] += Vec3(nx, ny, nz)
+                counts[idx] += 1
+        for idx, accum in enumerate(normals_per_vertex):
+            if counts[idx] > 0:
+                accum /= counts[idx]
+            accum.normalize()
+            normal_writer.setData3f(accum.x, accum.y, accum.z)
+
+        prim = GeomTriangles(Geom.UHStatic)
+        for a, b, c, d, _ in faces:
+            prim.addVertices(a, b, c)
+            prim.addVertices(a, c, d)
+
+        geom = Geom(vdata)
+        geom.addPrimitive(prim)
+        geom_node = GeomNode(name)
+        geom_node.addGeom(geom)
+        return geom_node
+
     def render(self, parent_node: NodePath) -> NodePath:
         """
         Render the animal and attach to parent node.
@@ -130,7 +223,14 @@ class Animal(ABC):
             NodePath containing the rendered animal
         """
         animal_geom = self.create_model()
-        self.node = parent_node.attachNewNode(animal_geom)
+        if isinstance(animal_geom, NodePath):
+            self.node = animal_geom
+            self.node.reparentTo(parent_node)
+        elif isinstance(animal_geom, GeomNode):
+            self.node = parent_node.attachNewNode(animal_geom)
+        else:
+            raise TypeError("create_model must return a GeomNode or NodePath")
+        self.render_node = parent_node
         # Add height offset to prevent terrain clipping
         display_pos = Vec3(self.position.x, self.position.y, self.position.z + self.height_offset)
         self.node.setPos(display_pos)
@@ -188,6 +288,10 @@ class Animal(ABC):
             # Keep animal above terrain
             display_pos = Vec3(self.position.x, self.position.y, self.position.z + self.height_offset)
             self.node.setPos(display_pos)
+            self._distance_since_track += self.velocity.length() * dt
+            if self._distance_since_track >= self.track_spacing:
+                self._distance_since_track = 0.0
+                self._leave_track(terrain_height)
 
     def _change_state(self):
         """Randomly change to a new state."""
@@ -260,6 +364,29 @@ class Animal(ABC):
         # Update position
         self.position += self.velocity * dt
 
+    def _leave_track(self, terrain_height: float):
+        """Leave a subtle track on the terrain to reinforce presence."""
+        if not self.render_node or self.velocity.lengthSquared() < 1e-4:
+            return
+
+        texture = create_track_texture()
+        cm = CardMaker(f"track_{self.species}")
+        cm.setFrame(-0.25, 0.25, -0.45, 0.45)
+        track_node = self.render_node.attachNewNode(cm.generate())
+        track_node.setTransparency(TransparencyAttrib.MAlpha)
+        track_node.setTexture(texture, 1)
+        track_node.setPos(self.position.x, self.position.y, terrain_height + 0.02)
+        track_node.setP(-90)
+        track_node.setScale(1.0)
+        if self.velocity.lengthSquared() > 1e-6:
+            direction = self.position + self.velocity.normalized()
+            track_node.lookAt(direction.x, direction.y, terrain_height + 0.02)
+        track_node.setColorScale(1, 1, 1, 0.75)
+        self.tracks.append(track_node)
+        if len(self.tracks) > 14:
+            oldest = self.tracks.pop(0)
+            oldest.removeNode()
+
     def take_damage(self, damage: float):
         """Apply damage to the animal."""
         if self.state == AnimalState.DEAD:
@@ -286,6 +413,10 @@ class Animal(ABC):
         if self.node:
             self.node.removeNode()
             self.node = None
+        for track in self.tracks:
+            track.removeNode()
+        self.tracks.clear()
+        self.render_node = None
 
 
 class Deer(Animal):
@@ -297,9 +428,60 @@ class Deer(Animal):
         self.detection_range = 60.0
         self.flee_range = 40.0
 
-    def create_model(self) -> GeomNode:
-        """Create deer model (larger, more visible shape)."""
-        return self.create_basic_shape(2.5, Vec4(0.5, 0.3, 0.1, 1.0))  # Larger, richer brown
+    def create_model(self) -> Union[GeomNode, NodePath]:
+        """Create a layered deer mesh with body, legs, head, and antlers."""
+        body_color = Vec4(0.58, 0.38, 0.2, 1.0)
+        underbelly_color = Vec4(0.82, 0.74, 0.62, 1.0)
+        leg_color = Vec4(0.42, 0.26, 0.14, 1.0)
+
+        root = NodePath('deer_model')
+
+        body = root.attachNewNode(self._create_box_geom(3.2, 1.1, 1.2, body_color, 'deer_body'))
+        body.setZ(1.1)
+        chest = root.attachNewNode(self._create_box_geom(1.1, 0.9, 1.0, underbelly_color, 'deer_chest'))
+        chest.setPos(0.9, 0, 1.2)
+
+        neck = root.attachNewNode(self._create_box_geom(1.0, 0.5, 0.9, body_color, 'deer_neck'))
+        neck.setPos(1.9, 0, 1.6)
+        neck.setP(-20)
+
+        head = root.attachNewNode(self._create_box_geom(0.9, 0.6, 0.6, Vec4(0.54, 0.32, 0.16, 1.0), 'deer_head'))
+        head.setPos(2.5, 0, 1.9)
+        head.setP(10)
+
+        ear_geom = self._create_box_geom(0.4, 0.18, 0.5, Vec4(0.78, 0.6, 0.4, 1.0), 'deer_ear')
+        left_ear = root.attachNewNode(ear_geom)
+        left_ear.setPos(2.7, 0.22, 2.3)
+        left_ear.setH(10)
+        right_ear = root.attachNewNode(ear_geom)
+        right_ear.setPos(2.7, -0.22, 2.3)
+        right_ear.setH(-10)
+
+        antler_geom = self._create_box_geom(0.6, 0.12, 0.6, Vec4(0.9, 0.88, 0.82, 1.0), 'deer_antler')
+        for offset in ((2.8, 0.18, 2.45), (2.8, -0.18, 2.45)):
+            antler = root.attachNewNode(antler_geom)
+            antler.setPos(*offset)
+            antler.setH(20 if offset[1] > 0 else -20)
+            antler.setP(35)
+
+        leg_geom = self._create_box_geom(0.35, 0.35, 1.1, leg_color, 'deer_leg')
+        leg_positions = [
+            (-1.0, 0.4, 0.55),
+            (-1.0, -0.4, 0.55),
+            (1.0, 0.45, 0.55),
+            (1.0, -0.45, 0.55)
+        ]
+        for pos in leg_positions:
+            leg = root.attachNewNode(leg_geom)
+            leg.setPos(*pos)
+
+        tail = root.attachNewNode(self._create_box_geom(0.4, 0.4, 0.4, underbelly_color, 'deer_tail'))
+        tail.setPos(-1.7, 0, 1.6)
+        tail.setP(35)
+
+        root.setScale(0.75)
+        root.flattenLight()
+        return root
 
 
 class Rabbit(Animal):
@@ -311,6 +493,41 @@ class Rabbit(Animal):
         self.detection_range = 30.0
         self.flee_range = 20.0
 
-    def create_model(self) -> GeomNode:
-        """Create rabbit model (larger, more visible shape)."""
-        return self.create_basic_shape(1.8, Vec4(0.7, 0.6, 0.5, 1.0))  # Larger, natural tan color
+    def create_model(self) -> Union[GeomNode, NodePath]:
+        """Create a stylized rabbit with rounded body and tall ears."""
+        body_color = Vec4(0.74, 0.66, 0.58, 1.0)
+        accent_color = Vec4(0.9, 0.86, 0.82, 1.0)
+
+        root = NodePath('rabbit_model')
+
+        body = root.attachNewNode(self._create_box_geom(1.6, 1.1, 0.9, body_color, 'rabbit_body'))
+        body.setZ(0.65)
+        head = root.attachNewNode(self._create_box_geom(0.8, 0.7, 0.7, body_color, 'rabbit_head'))
+        head.setPos(0.9, 0, 1.0)
+
+        ear_geom = self._create_box_geom(0.2, 0.25, 0.9, accent_color, 'rabbit_ear')
+        left_ear = root.attachNewNode(ear_geom)
+        left_ear.setPos(1.1, 0.18, 1.6)
+        left_ear.setH(6)
+        right_ear = root.attachNewNode(ear_geom)
+        right_ear.setPos(1.1, -0.18, 1.6)
+        right_ear.setH(-6)
+
+        foot_color = Vec4(body_color.x * 0.9, body_color.y * 0.9, body_color.z * 0.9, 1.0)
+        foot_geom = self._create_box_geom(0.35, 0.3, 0.55, foot_color, 'rabbit_foot')
+        paw_positions = [
+            (-0.6, 0.35, 0.3),
+            (-0.6, -0.35, 0.3),
+            (0.6, 0.35, 0.3),
+            (0.6, -0.35, 0.3)
+        ]
+        for pos in paw_positions:
+            paw = root.attachNewNode(foot_geom)
+            paw.setPos(*pos)
+
+        tail = root.attachNewNode(self._create_box_geom(0.4, 0.4, 0.4, accent_color, 'rabbit_tail'))
+        tail.setPos(-0.9, 0, 1.0)
+
+        root.setScale(0.9)
+        root.flattenLight()
+        return root

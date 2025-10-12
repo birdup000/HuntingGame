@@ -9,13 +9,17 @@ from direct.gui.DirectGui import (
 )
 from direct.gui.OnscreenText import OnscreenText
 from direct.gui.OnscreenImage import OnscreenImage
-from panda3d.core import TextNode, Vec4, Vec3, Point3, TransparencyAttrib, Texture, PNMImage
+import os
+from panda3d.core import TextNode, Vec4, Vec3, Point3, TransparencyAttrib, Texture, PNMImage, Filename
 from typing import Callable, Optional, Dict, Any, Tuple
 import sys
 
 
 class BaseMenu:
     """Base class for all menu screens."""
+
+    _shared_font = None
+    _font_checked = False
 
     def __init__(self, app, title: str = ""):
         self.app = app
@@ -35,6 +39,24 @@ class BaseMenu:
         self.title_color = (0.98, 0.94, 0.82, 1.0)
         self.border_color = (0.74, 0.6, 0.38, 0.55)
         self.selection_text_color = (1.0, 0.98, 0.92, 1.0)
+
+    def _get_ui_font(self):
+        """Return a shared UI font if a bundled font exists, else default."""
+        if BaseMenu._shared_font is not None:
+            return BaseMenu._shared_font
+        if not BaseMenu._font_checked:
+            BaseMenu._font_checked = True
+            font_dir = os.path.join(os.path.dirname(__file__), '..', 'fonts')
+            candidate = os.path.join(font_dir, 'ui_font.ttf')
+            if hasattr(self.app, 'loader') and hasattr(self.app.loader, 'loadFont') and os.path.isfile(candidate):
+                try:
+                    filename = Filename.fromOsSpecific(candidate)
+                    BaseMenu._shared_font = self.app.loader.loadFont(filename)
+                except Exception:
+                    BaseMenu._shared_font = None
+        if BaseMenu._shared_font is None:
+            BaseMenu._shared_font = TextNode.getDefaultFont()
+        return BaseMenu._shared_font
 
     def create_frame(self, width: float = 1.0, height: float = 1.0, frame_color: Optional[Tuple[float, float, float, float]] = None):
         """Create the main menu frame with optional background."""
@@ -93,12 +115,9 @@ class BaseMenu:
             shadow=(0, 0, 0, 0.85),
             shadowOffset=(0.01, 0.01)
         )
-        # Set font only if loader is available
-        if hasattr(self.app, 'loader') and hasattr(self.app.loader, 'loadFont'):
-            try:
-                title.setFont(self.app.loader.loadFont("cmss12.ttf"))
-            except Exception:
-                pass  # Use default font if cmss12 not available
+        ui_font = self._get_ui_font()
+        if ui_font:
+            title.setFont(ui_font)
         self.elements.append(title)
         return title
 
@@ -127,6 +146,9 @@ class BaseMenu:
         )
         button.setTransparency(TransparencyAttrib.MAlpha)
         button.setPythonTag('activation_command', command)
+        ui_font = self._get_ui_font()
+        if ui_font:
+            button['text_font'] = ui_font
 
         base_scale_vec = button.getScale()
         button._base_scale = base_scale_vec
@@ -196,12 +218,9 @@ class BaseMenu:
             shadow=(0, 0, 0, 0.8),
             shadowOffset=(0.009, 0.009)
         )
-        # Set font only if loader is available
-        if hasattr(self.app, 'loader') and hasattr(self.app.loader, 'loadFont'):
-            try:
-                label.setFont(self.app.loader.loadFont("cmss12.ttf"))
-            except Exception:
-                pass  # Use default font if cmss12 not available
+        ui_font = self._get_ui_font()
+        if ui_font:
+            label.setFont(ui_font)
         self.elements.append(label)
         return label
 

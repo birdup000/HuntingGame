@@ -43,6 +43,10 @@ class DynamicLighting:
         self.sun_light.setColor(Vec4(1.0, 0.9, 0.8, 1.0))  # Warm white
         self.sun_light.setDirection(Vec3(-1, -1, -1))
         self.sun_light.setSpecularColor(Vec4(1.0, 1.0, 1.0, 1.0))
+        try:
+            self.sun_light.setShadowCaster(True, 2048, 2048)
+        except Exception:
+            pass
         
         sun_np = self.render.attachNewNode(self.sun_light)
         self.render.setLight(sun_np)
@@ -78,6 +82,7 @@ class DynamicLighting:
         
         # Enable PBR lighting model
         self._setup_pbr_lights()
+        self.render.setShaderAuto()
         
         self.is_setup = True
     

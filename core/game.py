@@ -7,6 +7,7 @@ from direct.showbase.ShowBase import ShowBase
 from direct.task import Task
 from player.player import Player
 from environment.pbr_terrain import PBRTerrain, OptimizedTerrainRenderer
+from environment.decor import DecorManager
 from environment.sky import SkyDome
 from animals.animal import Deer, Rabbit
 from ui.menus import UIManager, SettingsMenu
@@ -43,6 +44,7 @@ class Game:
         self.dynamic_lighting = DynamicLighting(self.app.render)
         self.weather_system = WeatherSystem(self.app.render)
         self.foliage_renderer = FoliageRenderer(self.app.render)
+        self.decor_manager = None
 
     def start(self):
         """Start the game loop."""
@@ -112,6 +114,13 @@ class Game:
         self._setup_grass_fields()
         self._setup_tree_clusters()
         self._spawn_rock_formations()
+
+        if not self.decor_manager:
+            self.decor_manager = DecorManager(self.app, self.terrain)
+        else:
+            self.decor_manager.cleanup()
+            self.decor_manager.terrain = self.terrain
+        self.decor_manager.populate()
         
         # Spawn animals using config values
         self.spawn_animals()
@@ -432,6 +441,10 @@ class Game:
             rock.removeNode()
         self.rocks = []
 
+        if self.decor_manager:
+            self.decor_manager.cleanup()
+            self.decor_manager = None
+
         try:
             base_model = self.app.loader.loadModel('models/misc/sphere')
         except Exception:
@@ -558,6 +571,10 @@ class Game:
             rock.removeNode()
         self.rocks = []
 
+        if self.decor_manager:
+            self.decor_manager.cleanup()
+            self.decor_manager = None
+
         # Clean up UI
         if self.ui_manager:
             self.ui_manager.cleanup()
@@ -597,6 +614,9 @@ class Game:
         if self.terrain:
             self.terrain.cleanup()
             self.terrain = None
+
+        if self.decor_manager:
+            self.decor_manager.cleanup()
 
         # Reset UI but keep the manager
         if self.ui_manager:
