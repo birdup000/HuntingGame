@@ -94,7 +94,7 @@ class HUD:
             raise RuntimeError("HUD requires a Panda3D application with aspect2d or render2d")
 
         panel_texture = get_ui_panel_texture()
-        accent_color = (1.0, 0.8, 0.35, 1.0)
+        accent_color = (0.94, 0.75, 0.2, 1.0)  # Hunting green accent
 
         self.left_panel = DirectFrame(
             parent=hud_parent,

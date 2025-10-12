@@ -394,9 +394,9 @@ class Game:
         
         # Create multiple grass fields across the terrain
         field_configs = [
-            {'width': 40, 'height': 30, 'density': 500},
-            {'width': 30, 'height': 25, 'density': 300},
-            {'width': 35, 'height': 20, 'density': 400}
+            {'width': 60, 'height': 40, 'density': 800},   # Larger fields
+            {'width': 45, 'height': 30, 'density': 600},   # More dense
+            {'width': 50, 'height': 30, 'density': 700}    # More coverage
         ]
         
         for i, cfg in enumerate(field_configs):

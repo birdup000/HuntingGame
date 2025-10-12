@@ -14,9 +14,9 @@ TERRAIN_CONFIG = {
 
 # Animal settings
 ANIMAL_CONFIG = {
-    'deer_count': 8,       # Increased number of deer to spawn
-    'rabbit_count': 12,    # Increased number of rabbits to spawn
-    'spawn_radius': 40,    # Radius for animal spawning
+    'deer_count': 10,      # Increased number of deer to spawn
+    'rabbit_count': 15,    # More rabbits for better environment activity  
+    'spawn_radius': 50,    # Larger spawn area for more exploration
     'deer': {
         'speed': 6.0,
         'detection_range': 60.0,

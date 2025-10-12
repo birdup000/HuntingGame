@@ -32,13 +32,13 @@ class BaseMenu:
         self.selected_button = None  # For accessibility
 
         self.bg_color = (0.07, 0.1, 0.12, 0.92)
-        self.button_color = (0.16, 0.26, 0.19, 0.98)
-        self.button_hover_color = (0.27, 0.41, 0.29, 0.98)
-        self.button_selected_color = (0.58, 0.42, 0.22, 1.0)
-        self.text_color = (0.96, 0.97, 0.94, 1.0)
-        self.title_color = (0.98, 0.94, 0.82, 1.0)
-        self.border_color = (0.74, 0.6, 0.38, 0.55)
-        self.selection_text_color = (1.0, 0.98, 0.92, 1.0)
+        self.button_color = (0.12, 0.22, 0.14, 0.95)  # Forest green
+        self.button_hover_color = (0.18, 0.32, 0.2, 0.95)  # Lighter forest green
+        self.button_selected_color = (0.35, 0.6, 0.3, 1.0)  # Accent green for selection
+        self.text_color = (0.94, 0.96, 0.9, 1.0)  # Slightly off-white
+        self.title_color = (0.98, 0.92, 0.7, 1.0)  # Golden accent for titles
+        self.border_color = (0.6, 0.5, 0.3, 0.7)  # Earth brown
+        self.selection_text_color = (0.98, 0.94, 0.75, 1.0)  # Golden glow for selection
 
     def _get_ui_font(self):
         """Return a shared UI font if a bundled font exists, else default."""
