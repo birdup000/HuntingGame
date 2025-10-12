@@ -9,8 +9,8 @@ from direct.gui.DirectGui import (
 )
 from direct.gui.OnscreenText import OnscreenText
 from direct.gui.OnscreenImage import OnscreenImage
-from panda3d.core import TextNode, Vec4, Vec3, Point3, TransparencyAttrib
-from typing import Callable, Optional, Dict, Any
+from panda3d.core import TextNode, Vec4, Vec3, Point3, TransparencyAttrib, Texture, PNMImage
+from typing import Callable, Optional, Dict, Any, Tuple
 import sys
 
 
@@ -27,26 +27,47 @@ class BaseMenu:
         self.visible = False
         self.selected_button = None  # For accessibility
 
-        # Improved colors and styling with excellent contrast
-        self.bg_color = (0.02, 0.02, 0.04, 0.95)  # Very dark background for better contrast
-        self.button_color = (0.05, 0.1, 0.15, 1.0)  # Dark blue for better contrast
-        self.button_hover_color = (0.2, 0.3, 0.5, 1.0)  # Much brighter on hover
-        self.button_selected_color = (0.3, 0.5, 0.9, 1.0)  # Selected state - bright blue with white outline
-        self.text_color = (1.0, 1.0, 1.0, 1.0)  # Pure white for maximum readability
-        self.title_color = (1.0, 1.0, 1.0, 1.0)  # Pure white for titles - maximum contrast
-        self.border_color = (0.7, 0.8, 0.6, 0.0)  # Removed border
+        self.bg_color = (0.07, 0.1, 0.12, 0.92)
+        self.button_color = (0.16, 0.26, 0.19, 0.98)
+        self.button_hover_color = (0.27, 0.41, 0.29, 0.98)
+        self.button_selected_color = (0.58, 0.42, 0.22, 1.0)
+        self.text_color = (0.96, 0.97, 0.94, 1.0)
+        self.title_color = (0.98, 0.94, 0.82, 1.0)
+        self.border_color = (0.74, 0.6, 0.38, 0.55)
+        self.selection_text_color = (1.0, 0.98, 0.92, 1.0)
 
-    def create_frame(self, width: float = 1.0, height: float = 1.0):
+    def create_frame(self, width: float = 1.0, height: float = 1.0, frame_color: Optional[Tuple[float, float, float, float]] = None):
         """Create the main menu frame with optional background."""
+        parent = getattr(self.app, 'aspect2d', getattr(self.app, 'render2d', None))
+        if parent is None:
+            raise RuntimeError("UI menus require an app with aspect2d or render2d")
+
+        if not self.background:
+            left, right, bottom, top = self._get_fullscreen_frame_size()
+            self.background = DirectFrame(
+                parent=parent,
+                frameColor=(1.0, 1.0, 1.0, 1.0),
+                frameSize=(left, right, bottom, top),
+                sortOrder=0
+            )
+            self.background.setTransparency(TransparencyAttrib.MAlpha)
+            self.background.hide()
+            self._ensure_background_visuals()
+
+        if self.frame:
+            self.frame.destroy()
+
+        content_parent = getattr(self, '_background_tint', self.background)
         self.frame = DirectFrame(
-            frameColor=self.bg_color,
-            frameSize=(-width/2, width/2, -height/2, height/2),
+            frameColor=frame_color if frame_color is not None else self.bg_color,
+            frameSize=(-width / 2, width / 2, -height / 2, height / 2),
             pos=(0, 0, 0),
-            frameVisibleScale=(1, 1),
-            parent=self.app.render2d,
-            borderWidth=(0.005, 0.005)  # Minimal border to reduce interference
+            parent=content_parent,
+            sortOrder=1,
+            borderWidth=(0.0, 0.0)
         )
-        self.frame.hide()  # Start hidden
+        self.frame.setTransparency(TransparencyAttrib.MAlpha)
+        self.frame.hide()
 
     def add_frame_border(self, frame, width, height):
         """Add a decorative border around the frame - simplified approach."""
@@ -54,20 +75,23 @@ class BaseMenu:
         # Borders are handled by the main frame itself with better styling
         pass
 
-    def add_title(self, text: str, scale: float = 0.15, pos: tuple = (0, 0, 0.7)):
+    def add_title(self, text: str, scale: float = 0.15, pos: tuple = (0, 0, 0.7), parent=None,
+                  fg: Optional[Tuple[float, float, float, float]] = None):
         """Add a title to the menu with proper positioning."""
         # Ensure we have a frame to parent to
         if not self.frame:
             self.create_frame()
-            
+        target_parent = parent or self.frame
         title = OnscreenText(
             text=text,
             pos=pos,
             scale=scale,
-            fg=self.title_color,
+            fg=fg or self.title_color,
             align=TextNode.ACenter,
-            parent=self.frame,
-            mayChange=True
+            parent=target_parent,
+            mayChange=True,
+            shadow=(0, 0, 0, 0.85),
+            shadowOffset=(0.01, 0.01)
         )
         # Set font only if loader is available
         if hasattr(self.app, 'loader') and hasattr(self.app.loader, 'loadFont'):
@@ -79,62 +103,74 @@ class BaseMenu:
         return title
 
     def add_button(self, text: str, command: Callable, pos: tuple = (0, 0, 0),
-                   scale: float = 0.1, extra_args: list = None):
+                   scale: float = 0.1, extra_args: list = None, is_primary: bool = False, parent=None):
         """Add a button to the menu with proper positioning and styling."""
-        # Ensure we have a frame to parent to
         if not self.frame:
-            # Create a temporary frame if none exists
             self.create_frame()
-            
+        target_parent = parent or self.frame
         button = DirectButton(
             text=text,
             command=command,
             extraArgs=extra_args or [],
+            parent=target_parent,
             pos=pos,
             scale=scale,
             text_fg=self.text_color,
+            text_shadow=(0, 0, 0, 0.85),
             frameColor=self.button_color,
-            frameSize=(-0.4, 0.4, -0.08, 0.08),
+            frameSize=(-0.5, 0.5, -0.12, 0.12),
             relief=1,
             pressEffect=1,
-            borderWidth=(0.02, 0.02)  # Clear border for better button definition
+            borderWidth=(0.02, 0.02),
+            text_align=TextNode.ACenter,
+            text_pos=(0, -0.03)
         )
         button.setTransparency(TransparencyAttrib.MAlpha)
-        
-        # Parent to the menu frame for proper layering
-        button.reparentTo(self.frame)
+        button.setPythonTag('activation_command', command)
 
-        # Enhanced hover and focus effects with better visual feedback
+        base_scale_vec = button.getScale()
+        button._base_scale = base_scale_vec
+        button._base_border_width = button['borderWidth']
+        button._hover_scale = base_scale_vec * 1.05
+        button._selected_scale = base_scale_vec * 1.15
+        button._hover_border_width = tuple(width * 2 for width in button._base_border_width)
+        button._selected_border_width = tuple(width * 3 for width in button._base_border_width)
+        button._base_text = text
+
         def enhanced_hover(*args):
+            if self.selected_button == button:
+                return
             button['frameColor'] = self.button_hover_color
-            button['borderWidth'] = (0.04, 0.04)  # Thicker border on hover
-            button.setScale(scale * 1.05)  # Slight scale increase on hover
-            
+            button['borderWidth'] = getattr(button, '_hover_border_width', (0.04, 0.04))
+            button['text_fg'] = self.selection_text_color
+            hover_scale = getattr(button, '_hover_scale', None)
+            if hover_scale is not None:
+                button.setScale(hover_scale)
+            else:
+                button.setScale(scale * 1.05)
+
         def standard_leave(*args):
             if self.selected_button != button:
                 button['frameColor'] = self.button_color
-                button['borderWidth'] = (0.02, 0.02)  # Restore normal border
-            button.setScale(scale)  # Return to normal size
+                button['borderWidth'] = getattr(button, '_base_border_width', (0.02, 0.02))
+                button['text_fg'] = self.text_color
+                base_scale = getattr(button, '_base_scale', None)
+                if base_scale is not None:
+                    button.setScale(base_scale)
+                else:
+                    button.setScale(scale)
 
         def enhanced_focus(*args):
             if hasattr(self, 'selected_button'):
-                # Reset previously selected button
                 if self.selected_button and self.selected_button != button:
-                    self.selected_button['frameColor'] = self.button_color
-                    self.selected_button['borderWidth'] = (0.02, 0.02)
-                    self.selected_button.setScale(scale)
+                    self._reset_button_visual(self.selected_button)
                 self.selected_button = button
-                button['frameColor'] = self.button_selected_color
-                button['borderWidth'] = (0.06, 0.06)  # Thick border for selected
-                button.setScale(scale * 1.15)  # More obvious selected state
-                
-        # Enhanced release functions for button cleanup
-        # Store callbacks for cleanup
+                self._highlight_button(button)
+
         button.on_hover = enhanced_hover
-        button.on_leave = standard_leave 
+        button.on_leave = standard_leave
         button.on_focus = enhanced_focus
-        
-        # Connect the enhanced functions to events
+
         button.bind('rollover', enhanced_hover)
         button.bind('rolloverExit', standard_leave)
         button.bind('focusIn', enhanced_focus)
@@ -142,20 +178,23 @@ class BaseMenu:
         self.elements.append(button)
         return button
 
-    def add_label(self, text: str, pos: tuple = (0, 0, 0), scale: float = 0.08):
+    def add_label(self, text: str, pos: tuple = (0, 0, 0), scale: float = 0.08, parent=None,
+                  align: int = TextNode.ACenter, fg: Optional[Tuple[float, float, float, float]] = None):
         """Add a text label to the menu with proper positioning."""
         # Ensure we have a frame to parent to
         if not self.frame:
             self.create_frame()
-            
+        target_parent = parent or self.frame
         label = OnscreenText(
             text=text,
             pos=pos,
             scale=scale,
-            fg=self.text_color,
-            align=TextNode.ACenter,
-            parent=self.frame,
-            mayChange=True
+            fg=fg or self.text_color,
+            align=align,
+            parent=target_parent,
+            mayChange=True,
+            shadow=(0, 0, 0, 0.8),
+            shadowOffset=(0.009, 0.009)
         )
         # Set font only if loader is available
         if hasattr(self.app, 'loader') and hasattr(self.app.loader, 'loadFont'):
@@ -166,8 +205,129 @@ class BaseMenu:
         self.elements.append(label)
         return label
 
+    def _get_fullscreen_frame_size(self):
+        left = getattr(self.app, 'a2dLeft', -1.3)
+        right = getattr(self.app, 'a2dRight', 1.3)
+        bottom = getattr(self.app, 'a2dBottom', -1.0)
+        top = getattr(self.app, 'a2dTop', 1.0)
+        return (left, right, bottom, top)
+
+    def _ensure_background_visuals(self):
+        """Create a thematic background gradient once and reuse it."""
+        if not self.background:
+            return
+
+        if getattr(self, '_background_art', None) is None:
+            try:
+                texture = self._get_shared_gradient_texture()
+                if texture:
+                    left, right, bottom, top = self._get_fullscreen_frame_size()
+                    width = right - left
+                    height = top - bottom
+                    self._background_art = OnscreenImage(
+                        image=texture,
+                        parent=self.background,
+                        pos=(0, 0, 0)
+                    )
+                    self._background_art.setScale(width / 2, 1.0, height / 2)
+                    self._background_art.setTransparency(TransparencyAttrib.MAlpha)
+                    self._background_art.setBin("background", 0)
+            except Exception:
+                self.background['frameColor'] = (0.0, 0.0, 0.0, 0.85)
+
+        if getattr(self, '_background_tint', None) is None:
+            left, right, bottom, top = self._get_fullscreen_frame_size()
+            self._background_tint = DirectFrame(
+                parent=self.background,
+                frameColor=(0.0, 0.0, 0.0, 0.38),
+                frameSize=(left, right, bottom, top),
+                sortOrder=-1
+            )
+            self._background_tint.setTransparency(TransparencyAttrib.MAlpha)
+
+    @classmethod
+    def _get_shared_gradient_texture(cls):
+        """Cache a reusable gradient texture for the background."""
+        texture = getattr(cls, '_shared_background_texture', None)
+        if texture is None:
+            cls._shared_background_texture = cls._generate_gradient_texture(
+                top_color=(0.32, 0.43, 0.36),
+                bottom_color=(0.05, 0.09, 0.13)
+            )
+            texture = cls._shared_background_texture
+        return texture
+
+    @staticmethod
+    def _generate_gradient_texture(top_color: Tuple[float, float, float],
+                                   bottom_color: Tuple[float, float, float],
+                                   size: int = 512) -> Optional[Texture]:
+        try:
+            image = PNMImage(size, size)
+            for y in range(size):
+                blend = y / float(size - 1)
+                r = top_color[0] * (1.0 - blend) + bottom_color[0] * blend
+                g = top_color[1] * (1.0 - blend) + bottom_color[1] * blend
+                b = top_color[2] * (1.0 - blend) + bottom_color[2] * blend
+                for x in range(size):
+                    image.setXel(x, y, r, g, b)
+
+            texture = Texture("menu-background-gradient")
+            texture.load(image)
+            texture.setWrapU(Texture.WMClamp)
+            texture.setWrapV(Texture.WMClamp)
+            texture.setMagfilter(Texture.FTLinear)
+            texture.setMinfilter(Texture.FTLinear)
+            return texture
+        except Exception:
+            return None
+
+    def _reset_button_visual(self, button: DirectButton):
+        """Restore a button to its base visual state."""
+        if not button:
+            return
+        button['frameColor'] = self.button_color
+        button['borderWidth'] = getattr(button, '_base_border_width', (0.02, 0.02))
+        button['text_fg'] = self.text_color
+        base_scale = getattr(button, '_base_scale', None)
+        if base_scale is not None:
+            button.setScale(base_scale)
+        else:
+            current_scale = button.getScale() if hasattr(button, 'getScale') else None
+            if hasattr(current_scale, 'x'):
+                button.setScale(current_scale.x)
+            elif isinstance(current_scale, tuple) and current_scale:
+                button.setScale(current_scale[0])
+            else:
+                button.setScale(0.1)
+        if hasattr(button, '_base_text'):
+            button['text'] = button._base_text
+
+    def _highlight_button(self, button: DirectButton):
+        """Apply the selected styling to a button."""
+        if not button:
+            return
+        button['frameColor'] = self.button_selected_color
+        button['borderWidth'] = getattr(button, '_selected_border_width', (0.06, 0.06))
+        button['text_fg'] = self.selection_text_color
+        selected_scale = getattr(button, '_selected_scale', None)
+        if selected_scale is not None:
+            button.setScale(selected_scale)
+        else:
+            current_scale = button.getScale() if hasattr(button, 'getScale') else None
+            if hasattr(current_scale, 'x'):
+                button.setScale(current_scale.x * 1.15)
+            elif isinstance(current_scale, tuple) and current_scale:
+                button.setScale(current_scale[0] * 1.15)
+            else:
+                button.setScale(0.115)
+        if hasattr(button, '_base_text'):
+            button['text'] = button._base_text
+
+
     def show(self):
         """Show the menu."""
+        if self.background:
+            self.background.show()
         if self.frame:
             self.frame.show()
         # Show any borders
@@ -187,8 +347,14 @@ class BaseMenu:
         # Find all buttons in elements
         buttons = [elem for elem in self.elements if isinstance(elem, DirectButton)]
         if buttons:
+            # Reset button visuals before applying selection
+            for button in buttons:
+                self._reset_button_visual(button)
+
             # Set focus on first button
-            self.selected_button = buttons[0] if hasattr(self, 'selected_button') else None
+            self.selected_button = buttons[0]
+            self._highlight_button(self.selected_button)
+
             # Bind keyboard navigation in the app if not already bound
             if hasattr(self.app, 'accept') and hasattr(self.app, 'ignore'):
                 # Only bind once - check if already bound
@@ -205,68 +371,74 @@ class BaseMenu:
     def select_previous(self):
         """Select the previous button with proper scaling."""
         buttons = [elem for elem in self.elements if isinstance(elem, DirectButton)]
-        if self.selected_button and buttons:
-            try:
-                current_idx = buttons.index(self.selected_button)
-                new_idx = (current_idx - 1) % len(buttons)
-                # Reset previous button completely
-                self.selected_button['frameColor'] = self.button_color
-                self.selected_button['borderWidth'] = (0.02, 0.02)
-                self.selected_button.setScale(0.1)  # Reset scale
-                self.selected_button = buttons[new_idx]
-                # Highlight new selection with maximum visibility
-                self.selected_button['frameColor'] = self.button_selected_color
-                self.selected_button['borderWidth'] = (0.06, 0.06)
-                self.selected_button.setScale(0.1 * 1.15)  # Selected state is much larger
-            except (ValueError, IndexError):
-                if buttons:
-                    # Reset all buttons first
-                    for btn in buttons:
-                        btn['frameColor'] = self.button_color
-                        btn['borderWidth'] = (0.02, 0.02)
-                        btn.setScale(0.1)
-                    self.selected_button = buttons[0]
-                    self.selected_button['frameColor'] = self.button_selected_color
-                    self.selected_button['borderWidth'] = (0.06, 0.06)
-                    self.selected_button.setScale(0.1 * 1.15)
+        if not buttons:
+            return
+
+        if self.selected_button not in buttons:
+            self.selected_button = buttons[0]
+
+        if not self.selected_button:
+            self.selected_button = buttons[0]
+            self._highlight_button(self.selected_button)
+            return
+
+        try:
+            current_idx = buttons.index(self.selected_button)
+            new_idx = (current_idx - 1) % len(buttons)
+            self._reset_button_visual(self.selected_button)
+            self.selected_button = buttons[new_idx]
+            self._highlight_button(self.selected_button)
+        except (ValueError, IndexError):
+            for button in buttons:
+                self._reset_button_visual(button)
+            self.selected_button = buttons[0]
+            self._highlight_button(self.selected_button)
 
     def select_next(self):
         """Select the next button with proper scaling."""
         buttons = [elem for elem in self.elements if isinstance(elem, DirectButton)]
-        if self.selected_button and buttons:
-            try:
-                current_idx = buttons.index(self.selected_button)
-                new_idx = (current_idx + 1) % len(buttons)
-                # Reset previous button completely
-                self.selected_button['frameColor'] = self.button_color
-                self.selected_button['borderWidth'] = (0.02, 0.02)
-                self.selected_button.setScale(0.1)  # Reset scale
-                self.selected_button = buttons[new_idx]
-                # Highlight new selection with maximum visibility
-                self.selected_button['frameColor'] = self.button_selected_color
-                self.selected_button['borderWidth'] = (0.06, 0.06)
-                self.selected_button.setScale(0.1 * 1.15)  # Selected state is much larger
-            except (ValueError, IndexError):
-                if buttons:
-                    # Reset all buttons first
-                    for btn in buttons:
-                        btn['frameColor'] = self.button_color
-                        btn['borderWidth'] = (0.02, 0.02)
-                        btn.setScale(0.1)
-                    self.selected_button = buttons[0]
-                    self.selected_button['frameColor'] = self.button_selected_color
-                    self.selected_button['borderWidth'] = (0.06, 0.06)
-                    self.selected_button.setScale(0.1 * 1.15)
+        if not buttons:
+            return
+
+        if self.selected_button not in buttons:
+            self.selected_button = buttons[0]
+
+        if not self.selected_button:
+            self.selected_button = buttons[0]
+            self._highlight_button(self.selected_button)
+            return
+
+        try:
+            current_idx = buttons.index(self.selected_button)
+            new_idx = (current_idx + 1) % len(buttons)
+            self._reset_button_visual(self.selected_button)
+            self.selected_button = buttons[new_idx]
+            self._highlight_button(self.selected_button)
+        except (ValueError, IndexError):
+            for button in buttons:
+                self._reset_button_visual(button)
+            self.selected_button = buttons[0]
+            self._highlight_button(self.selected_button)
 
     def activate_selection(self):
         """Activate the currently selected button."""
         if self.selected_button:
-            self.selected_button.command(*self.selected_button.extraArgs)
+            command = self.selected_button.getPythonTag('activation_command')
+            if not command:
+                try:
+                    command = self.selected_button['command']
+                except Exception:
+                    command = None
+
+            if command:
+                command(*getattr(self.selected_button, 'extraArgs', []))
             
     def hide(self):
         """Hide the menu."""
         if self.frame:
             self.frame.hide()
+        if self.background:
+            self.background.hide()
         # Hide any borders
         if hasattr(self, 'borders'):
             for border in self.borders:
@@ -300,6 +472,10 @@ class BaseMenu:
                 element.destroy()
         if self.frame:
             self.frame.destroy()
+            self.frame = None
+        if self.background:
+            self.background.destroy()
+            self.background = None
         self.elements.clear()
 
 
@@ -311,47 +487,86 @@ class MainMenu(BaseMenu):
         self.on_start_game = on_start_game
         self.on_settings = on_settings
         self.on_quit = on_quit
+        self.button_panel = None
 
         self.create_main_menu()
 
     def create_main_menu(self):
-        """Create the main menu layout with clear hierarchy and spacing."""
-        self.create_frame(1.0, 1.2)  # Better responsive proportions
+        """Create the main menu layout with clear hierarchy and readability."""
+        self.create_frame(2.3, 1.6, frame_color=(0.0, 0.0, 0.0, 0.0))
 
-        # Main title - scaled properly to avoid clipping
-        self.add_title("3D HUNTING SIMULATOR", scale=0.22, pos=(0, 0, 0.55))
+        self.add_title(
+            "3D HUNTING SIMULATOR",
+            scale=0.27,
+            pos=(0, 0, 0.78),
+            parent=self.frame,
+            fg=(0.97, 0.92, 0.8, 1.0)
+        )
 
-        # Subtitle - better scaling and positioning to prevent truncation
-        self.add_label("Experience the thrill of the hunt", pos=(0, 0, 0.45), scale=0.07)
+        self.add_label(
+            "Experience the thrill of the hunt",
+            pos=(0, 0, 0.6),
+            scale=0.1,
+            parent=self.frame,
+            fg=(0.9, 0.85, 0.76, 1.0)
+        )
 
-        # Clear separation before buttons
-        y_start = 0.18
-        button_spacing = 0.12  # Better spacing to prevent visual crowding
+        accent_bar = DirectFrame(
+            parent=self.frame,
+            frameColor=(0.78, 0.58, 0.26, 0.82),
+            frameSize=(-0.45, 0.45, -0.01, 0.01),
+            pos=(0, 0, 0.52)
+        )
+        accent_bar.setTransparency(TransparencyAttrib.MAlpha)
 
-        # Menu buttons with improved visual hierarchy
+        self.button_panel = DirectFrame(
+            parent=self.frame,
+            frameColor=(0.08, 0.13, 0.09, 0.78),
+            frameSize=(-0.8, 0.8, -0.55, 0.25),
+            pos=(0, 0, -0.05),
+            borderWidth=(0.02, 0.02)
+        )
+        self.button_panel.setTransparency(TransparencyAttrib.MAlpha)
+
+        y_start = 0.12
+        button_spacing = 0.24
+
         self.add_button(
             "Start Game",
             self.on_start_game,
             pos=(0, 0, y_start),
-            scale=0.11
+            scale=0.125,
+            is_primary=True,
+            parent=self.button_panel
         )
 
         self.add_button(
-            "Settings", 
+            "Settings",
             self.on_settings,
             pos=(0, 0, y_start - button_spacing),
-            scale=0.1
+            scale=0.12,
+            parent=self.button_panel
         )
 
         self.add_button(
             "Quit Game",
             self.on_quit,
             pos=(0, 0, y_start - (2 * button_spacing)),
-            scale=0.1
+            scale=0.12,
+            parent=self.button_panel
         )
 
-        # Version info - centered bottom with subtle styling
-        self.add_label("Version 1.0", pos=(0, 0, -0.5), scale=0.06)
+        left, right, bottom, _top = self._get_fullscreen_frame_size()
+        version_x = right - 0.35
+        version_z = bottom + 0.18
+        self.add_label(
+            "Version 1.0",
+            pos=(version_x, 0, version_z),
+            scale=0.06,
+            parent=self.background,
+            align=TextNode.ARight,
+            fg=(0.78, 0.81, 0.77, 1.0)
+        )
 
 
 class PauseMenu(BaseMenu):
@@ -721,7 +936,6 @@ class UIManager:
         elif menu_type == 'settings':
             # Create settings menu if not already created
             if self.settings_menu is None:
-                from .menus import SettingsMenu
                 self.settings_menu = SettingsMenu(
                     self.app,
                     self.callbacks.get('back_to_main', lambda: None),
