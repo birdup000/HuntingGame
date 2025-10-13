@@ -76,15 +76,19 @@ class Player:
         self.velocity = Vec3(0, 0, 0)
         self.move_speed = 10.0
         self.mouse_sensitivity = 0.2
-        self.camera_distance = 5.0
+        self.camera_distance = 4.0  # Reduced distance for better visibility
         self.health = 100  # Player health
         self.max_health = 100
 
-        # Camera setup
+        # Camera setup - ensure better positioning
         self.camera_node = getattr(self.app, 'camera', None)
         if self.camera_node is not None:
-            self.camera_node.setPos(0, -self.camera_distance, 2)
+            # Position camera properly above terrain
+            camera_height = terrain_height + 2.0  # At eye level
+            self.camera_node.setPos(0, -self.camera_distance, camera_height)
             self.camera_node.lookAt(self.position)
+            # Add slight upward tilt for better view
+            self.camera_node.setP(5)  # Tilt up 5 degrees
         else:
             print("Warning: Camera not available - running in headless mode")
 

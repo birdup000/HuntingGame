@@ -19,6 +19,11 @@ class MainApp(ShowBase):
         from config import GAME_CONFIG
         ShowBase.__init__(self)
         
+        # Ensure proper camera settings for visibility
+        if hasattr(self, 'camLens'):
+            self.camLens.setFar(2000)  # Increased far clip for better visibility
+            self.camLens.setNear(0.1)  # Closer near clip
+        
         # Initialize graphics systems
         self.graphics_manager = create_optimized_graphics(self)
         self.setup_post_processing()

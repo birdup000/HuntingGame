@@ -102,18 +102,17 @@ class PBRTerrain:
         """Create optimized PBR terrain geometry."""
         # Create vertex format for PBR
         format = GeomVertexFormat.getV3n3c4t2()
-        vdata = GeomVertexData('terrain', format, Geom.UHDynamic)
+        vdata = GeomVertexData('terrain', format, Geom.UHStatic)
+        
+        # Reserve space for vertices to avoid memory issues
+        vdata.setNumRows(self.width * self.height)
         
         vertex = GeomVertexWriter(vdata, 'vertex')
         normal = GeomVertexWriter(vdata, 'normal')
         color = GeomVertexWriter(vdata, 'color')
         texcoord = GeomVertexWriter(vdata, 'texcoord')
         
-        # Generate vertices and triangles
-        vertices = []
-        faces = []
-        normals = []
-        
+        # Generate vertices and triangles with improved smoothing
         for x in range(self.width):
             for y in range(self.height):
                 # Get height and calculate normal
@@ -122,9 +121,6 @@ class PBRTerrain:
                 
                 # Calculate normal using surrounding points
                 normal_vec = self._calculate_normal(x, y)
-                
-                vertices.append(pos)
-                normals.append(normal_vec)
                 
                 # Determine material zone
                 zone = self._get_material_zone(x, y, h)
@@ -137,28 +133,27 @@ class PBRTerrain:
                 base_color = self._get_zone_color(zone, h)
                 color.addData4f(*base_color)
                 
-                # UV coordinates with tiling
-                uv_scale = 10.0  # Tiled texture
+                # UV coordinates with proper tiling for texturing
+                uv_scale = max(self.width, self.height) / 10.0  # Better scaling
                 texcoord.addData2f(
                     x / self.width * uv_scale,
                     y / self.height * uv_scale
                 )
         
         # Create triangles
+        tris = GeomTriangles(Geom.UHStatic)
         for x in range(self.width - 1):
             for y in range(self.height - 1):
                 idx = x * self.height + y
                 
                 # Two triangles per quad
-                faces.extend([
-                    [idx, idx + 1, idx + self.height],
-                    [idx + 1, idx + self.height + 1, idx + self.height]
-                ])
-        
-        # Add triangles to geometry
-        tris = GeomTriangles(Geom.UHStatic)
-        for face in faces:
-            tris.addVertices(*face)
+                tris.addVertex(idx)
+                tris.addVertex(idx + 1)
+                tris.addVertex(idx + self.height)
+                
+                tris.addVertex(idx + 1)
+                tris.addVertex(idx + self.height + 1)
+                tris.addVertex(idx + self.height)
         
         # Create final geometry
         geom = Geom(vdata)
@@ -171,12 +166,16 @@ class PBRTerrain:
         terrain_gnode = GeomNode('terrain_gnode')
         terrain_gnode.addGeom(geom)
         terrain_node_path = terrain_node.attachNewNode(terrain_gnode)
+        
+        # Store reference for faster access
+        self.terrain_node_path = terrain_node_path
 
         if self.terrain_texture:
-            terrain_node_path.setTexture(self.terrain_texture, 1)
+            # Apply texture properly
+            self.terrain_node_path.setTexture(self.terrain_texture, 1)
             texture_stage = TextureStage.getDefault()
-            tile_scale = max(self.width, self.height) / 16.0
-            terrain_node_path.setTexScale(texture_stage, tile_scale, tile_scale)
+            tile_scale = max(self.width, self.height) / 8.0  # More texture detail
+            self.terrain_node_path.setTexScale(texture_stage, tile_scale, tile_scale)
         
         return terrain_node
     
@@ -212,12 +211,12 @@ class PBRTerrain:
     def _get_zone_color(self, zone, height):
         """Get base color for material zone."""
         colors = {
-            'snow': (0.95, 0.98, 1.0, 1.0),
-            'rock': (0.4, 0.4, 0.45, 1.0),
-            'wet': (0.2, 0.15, 0.1, 1.0),
-            'forest': (0.15, 0.2, 0.05, 1.0)
+            'snow': (0.95, 0.98, 1.0, 1.0),      # Snow white
+            'rock': (0.6, 0.6, 0.55, 1.0),      # Better rock color
+            'wet': (0.2, 0.3, 0.5, 1.0),       # Blue-grey for wet areas
+            'forest': (0.15, 0.4, 0.1, 1.0)    # Vibrant green for forest
         }
-        return colors.get(zone, (0.3, 0.3, 0.3, 1.0))
+        return colors.get(zone, (0.4, 0.3, 0.2, 1.0))  # Default brow
     
     def apply_dynamic_materials(self, player_pos):
         """Apply dynamic materials based on current conditions."""
@@ -227,13 +226,22 @@ class PBRTerrain:
         # Sample current weather conditions for wetness
         wetness = 0.0  # Placeholder - weather system not available yet
         
-        # Apply PBR materials to different zones (simple approach for now)
-        # For now, just use basic materials directly on the terrain node
-        for zone_name in self.material_zones:
-            material = self._get_dynamic_material(zone_name, wetness)
-            # Apply material to the main terrain node - in a full implementation, this would be zone-specific
+        # Apply PBR materials to terrain (simple approach for now)
+        if self.terrain_node:
+            # Apply forest material as base for better appearance
+            forest_material = self._get_dynamic_material('forest', wetness)
             if hasattr(self.terrain_node, 'setMaterial'):
-                self.terrain_node.setMaterial(material.material, 1)
+                self.terrain_node.setMaterial(forest_material.material, 1)
+            
+    def _create_material_zones(self):
+        """Create and store material zones for the terrain."""
+        # For now, create a simple zone structure
+        center = Vec3(0, 0, 0)
+        self.material_zones['center'] = {
+            'node': self.terrain_node,
+            'center': center,
+            'material': 'forest'
+        }
     
     def _get_dynamic_material(self, zone_name, wetness):
         """Get material adjusted for current conditions."""
@@ -262,12 +270,19 @@ class PBRTerrain:
         self.generate_terrain()
         
         # Create geometry
-        self.terrain_node = self.create_terrain_geometry()
+        terrain_node_path = self.create_terrain_geometry()
         
-        # Apply to parent
-        self.terrain_node.reparentTo(parent_node)
+        # Apply to parent and store reference
+        self.terrain_node = terrain_node_path.reparentTo(parent_node)
         
-        # Set initial materials
+        # Store terrain reference for animals (use temporary bypass for now)
+        try:
+            self.terrain_node.setPythonTag('terrain', self)
+        except:
+            pass  # Skip if not supported in this version
+        
+        # Create material zones and set initial materials
+        self._create_material_zones()
         self.apply_dynamic_materials((0, 0, 0))  # Pass initial player position
         
         print(f"PBR Terrain generated: {self.width}x{self.height}, PBR materials applied")

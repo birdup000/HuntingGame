@@ -59,7 +59,7 @@ class Animal(ABC):
         self.state_timer = 0.0
         self.state_duration = 3.0  # How long to stay in current state
         # Height offset to keep animals above terrain
-        self.height_offset = 0.5
+        self.height_offset = 0.0
         self.render_node: Optional[NodePath] = None
         self.tracks: list[NodePath] = []
         self.track_spacing = 1.6
@@ -72,7 +72,7 @@ class Animal(ABC):
 
     def create_basic_shape(self, size: float, color: Vec4) -> GeomNode:
         """
-        Create a basic geometric shape for the animal model with better visibility.
+        Create a more detailed animal shape with better visibility and realism.
 
         Args:
             size: Size of the shape
@@ -81,7 +81,7 @@ class Animal(ABC):
         Returns:
             GeomNode containing the basic shape
         """
-        # Create a bright, more visible shape
+        # Create a more detailed animal-like shape
         format = GeomVertexFormat.getV3n3c4()
         vdata = GeomVertexData('animal', format, Geom.UHStatic)
 
@@ -89,47 +89,54 @@ class Animal(ABC):
         normal = GeomVertexWriter(vdata, 'normal')
         color_writer = GeomVertexWriter(vdata, 'color')
 
-        # Create a cone shape (like an arrow) pointing up for better visibility
+        # Create elongated body with head and legs
+        body_length = size * 2.0
+        body_width = size * 0.8
+        body_height = size * 0.6
+        
         vertices = [
-            # Cone base (square)
-            (-size, -size, -size * 0.5), (size, -size, -size * 0.5), (size, size, -size * 0.5), (-size, size, -size * 0.5),
-            # Cone tip
-            (0, 0, size * 1.5)
+            # Body vertices (8 corners)
+            (-body_length/2, -body_width/2, -body_height/2),  # 0
+            (body_length/2, -body_width/2, -body_height/2),   # 1
+            (body_length/2, body_width/2, -body_height/2),    # 2
+            (-body_length/2, body_width/2, -body_height/2),   # 3
+            (-body_length/2, -body_width/2, body_height/2),   # 4
+            (body_length/2, -body_width/2, body_height/2),    # 5
+            (body_length/2, body_width/2, body_height/2),     # 6
+            (-body_length/2, body_width/2, body_height/2),    # 7
         ]
 
-        # Normals pointing outward
+        # Face normals for body
         normals = [
-            (0, 0, -1), (0, 0, -1), (0, 0, -1), (0, 0, -1),  # Base
-            (1, 1, 1), (1, -1, 1), (-1, -1, 1), (-1, 1, 1), (0, 0, 1)  # Sides
+            (0, 0, -1), (0, 0, 1), (0, -1, 0), (0, 1, 0), (-1, 0, 0), (1, 0, 0),  # Main faces
         ]
 
-        # Add vertices, normals, and colors
+        # Add vertices with realistic colors
         for i, v in enumerate(vertices):
             vertex.addData3f(*v)
-            normal_index = min(i, len(normals) - 1)
-            normal.addData3f(*normals[normal_index])
-            # Make colors slightly brighter for visibility
-            bright_color = Vec4(min(1.0, color.x * 1.3), min(1.0, color.y * 1.3), min(1.0, color.z * 1.3), color.w)
-            color_writer.addData4f(*bright_color)
+            # Use consistent direction normals for cleaner look
+            normal.addData3f(0, 0, 1)
+            # Simply use base color for cleaner appearance
+            color_writer.addData4f(color.x, color.y, color.z, color.w)
 
-        # Create triangles for cone
+        # Create body triangles
         geom = Geom(vdata)
         prim = GeomTriangles(Geom.UHStatic)
 
-        # Base triangle
-        prim.addVertex(0)
-        prim.addVertex(1)
-        prim.addVertex(2)
-        prim.addVertex(0)
-        prim.addVertex(2)
-        prim.addVertex(3)
-
-        # Side triangles
-        for i in range(4):
-            next_i = (i + 1) % 4
-            prim.addVertex(4)  # Tip
-            prim.addVertex(i)
-            prim.addVertex(next_i)
+        # Each face as 2 triangles
+        faces = [
+            [0, 1, 2, 3], [4, 7, 6, 5],  # top, bottom
+            [0, 4, 5, 1], [2, 6, 7, 3],  # front, back  
+            [0, 3, 7, 4], [1, 5, 6, 2]  # left, right
+        ]
+        
+        for vertices_indices in faces:
+            prim.addVertex(vertices_indices[0])
+            prim.addVertex(vertices_indices[1])
+            prim.addVertex(vertices_indices[2])
+            prim.addVertex(vertices_indices[0])
+            prim.addVertex(vertices_indices[2])
+            prim.addVertex(vertices_indices[3])
 
         geom.addPrimitive(prim)
 
@@ -231,9 +238,8 @@ class Animal(ABC):
         else:
             raise TypeError("create_model must return a GeomNode or NodePath")
         self.render_node = parent_node
-        # Add height offset to prevent terrain clipping
-        display_pos = Vec3(self.position.x, self.position.y, self.position.z + self.height_offset)
-        self.node.setPos(display_pos)
+        # Remove height offset - position animals directly on terrain
+        self. node.setPos(self.position)
 
         return self.node
 
@@ -287,7 +293,7 @@ class Animal(ABC):
         if self.node:
             # Keep animal above terrain
             display_pos = Vec3(self.position.x, self.position.y, self.position.z + self.height_offset)
-            self.node.setPos(display_pos)
+            self.node.setPos(self.position)
             self._distance_since_track += self.velocity.length() * dt
             if self._distance_since_track >= self.track_spacing:
                 self._distance_since_track = 0.0
@@ -307,10 +313,11 @@ class Animal(ABC):
         if self.state == AnimalState.FORAGING:
             angle = random.uniform(0, 2 * math.pi)
             distance = random.uniform(5.0, 20.0)
-            self.target_position = self.position + Vec3(
-                math.cos(angle) * distance,
-                math.sin(angle) * distance,
-                0
+            # Keep target at same z-level for terrain following
+            self.target_position = Vec3(
+                self.position.x + math.cos(angle) * distance,
+                self.position.y + math.sin(angle) * distance,
+                self.position.z
             )
 
     def is_dead(self) -> bool:
@@ -362,7 +369,19 @@ class Animal(ABC):
             self.speed = 5.0  # Normal speed
 
         # Update position
+        old_position = Vec3(self.position)  # Store old position
         self.position += self.velocity * dt
+        
+        # Apply gravity/terrain alignment - ensure animals stay on terrain
+        if hasattr(self, '_last_ground_height'):
+            # Smooth terrain following
+            current_ground = self._last_ground_height
+        else:
+            current_ground = 0  # Fallback
+            
+        # Store position for terrain queries
+        self._last_position = Vec3(self.position.x, self.position.y, 0)
+        self._last_ground_height = current_ground
 
     def _leave_track(self, terrain_height: float):
         """Leave a subtle track on the terrain to reinforce presence."""

@@ -75,26 +75,9 @@ class HUD:
         self.crosshair_color_reload = Vec4(1.0, 0.25, 0.25, 1.0)
 
     def setup_pygame(self):
-        """Initialize Pygame for 2D UI rendering."""
-        try:
-            pygame.init()
-            self.pygame_initialized = True
-
-            # Get window size from config
-            from config import GAME_CONFIG
-            window_size = GAME_CONFIG['window_size']
-
-            # Create a surface for 2D rendering
-            self.screen = pygame.Surface(window_size, pygame.SRCALPHA)
-            self.font = pygame.font.SysFont('Arial', 24)
-
-            # Test font creation to ensure it works
-            test_text = self.font.render("Test", True, (255, 255, 255))
-            
-            print("Pygame initialized for HUD rendering")
-        except Exception as e:
-            print(f"Failed to initialize Pygame: {e}")
-            self.pygame_initialized = False
+        """Disable Pygame to avoid rendering conflicts - use Panda3D only."""
+        self.pygame_initialized = False
+        print("Pygame disabled - using Panda3D UI only")
 
     def _register_panel(self, panel: DirectFrame) -> DirectFrame:
         self.hud_panels.append(panel)
