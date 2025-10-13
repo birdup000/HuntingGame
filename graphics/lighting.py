@@ -20,6 +20,7 @@ class DynamicLighting:
         self.ambient_light = None
         self.fill_light = None
         self.sky_ambient = None
+        self.rim_light = None
         self.time_of_day = 12.0  # 12:00 PM (noon)
         self.is_setup = False
         
@@ -29,6 +30,7 @@ class DynamicLighting:
         self.sun_light_base_color = None
         self.ambient_light_base_color = None
         self.sky_ambient_base_color = None
+        self.rim_light_base_color = None
         
     def setup_advanced_lighting(self):
         """Set up photorealistic lighting system with PBR support."""
@@ -69,6 +71,13 @@ class DynamicLighting:
         self.sky_ambient.setColor(Vec4(0.1, 0.15, 0.25, 1.0))
         sky_np = self.render.attachNewNode(self.sky_ambient)
         self.render.setLight(sky_np)
+
+        self.rim_light = DirectionalLight('rim')
+        self.rim_light.setColor(Vec4(0.28, 0.36, 0.52, 0.6))
+        self.rim_light.setDirection(Vec3(0.35, -0.85, 0.6))
+        rim_np = self.render.attachNewNode(self.rim_light)
+        self.render.setLight(rim_np)
+        self.rim_light_base_color = Vec4(self.rim_light.getColor())
 
         self.sun_light_base_color = Vec4(self.sun_light.getColor())
         self.ambient_light_base_color = Vec4(self.ambient_light.getColor())
@@ -136,6 +145,9 @@ class DynamicLighting:
         self.sun_light_base_color = Vec4(new_color)
         self.sun_light.setColor(new_color)
         self._update_ambient_colors(hour)
+        if self.rim_light:
+            rim_direction = Vec3(y * 0.6, -x * 0.6, 0.8)
+            self.rim_light.setDirection(rim_direction)
         
         return Vec3(x, y, z)
     
@@ -175,6 +187,8 @@ class DynamicLighting:
             self.sun_light_base_color = Vec4(self.sun_light.getColor())
         if self.ambient_light_base_color is None:
             self.ambient_light_base_color = Vec4(self.ambient_light.getColor())
+        if self.rim_light and self.rim_light_base_color is None:
+            self.rim_light_base_color = Vec4(self.rim_light.getColor())
 
         new_sun_color = Vec4(
             self.sun_light_base_color[0] * sun_factor,
@@ -191,6 +205,16 @@ class DynamicLighting:
             self.ambient_light_base_color[3]
         )
         self.ambient_light.setColor(new_ambient)
+
+        if self.rim_light and self.rim_light_base_color is not None:
+            rim_factor = max(0.35, 1.0 - fog_density * 0.6)
+            rim_color = Vec4(
+                self.rim_light_base_color[0] * rim_factor,
+                self.rim_light_base_color[1] * rim_factor,
+                self.rim_light_base_color[2] * rim_factor,
+                self.rim_light_base_color[3]
+            )
+            self.rim_light.setColor(rim_color)
 
 
 class VolumetricFog:

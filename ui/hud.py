@@ -5,7 +5,7 @@ Handles heads-up display elements like health, ammo, crosshair, and score.
 
 import os
 import pygame
-from typing import Optional, Tuple
+from typing import Optional, Tuple, Dict
 
 from panda3d.core import Vec4, TextNode, TransparencyAttrib, Filename
 from direct.gui.DirectGui import DirectFrame, DirectWaitBar
@@ -29,6 +29,33 @@ class HUD:
         self.kills = 0
         self.shots_fired = 0
         self.shots_hit = 0
+
+        self.theme = {
+            'primary_text': (0.93, 0.96, 0.98, 1.0),
+            'secondary_text': (0.78, 0.83, 0.9, 1.0),
+            'accent': (0.94, 0.75, 0.32, 1.0),
+            'panel_tint': (1.0, 1.0, 1.0, 1.0),
+            'warning': (1.0, 0.42, 0.32, 1.0)
+        }
+        self._last_state: Dict[str, Optional[float]] = {
+            'health': None,
+            'ammo': None,
+            'weapon_status': None,
+            'score': None,
+            'accuracy': None,
+            'kills': None,
+            'objective': None
+        }
+        self._idle_time = 0.0
+        self.fade_delay = 2.6
+        self.fade_duration = 0.6
+        self.fade_target_opacity = 0.38
+        self._current_opacity = 1.0
+        self._objective_state: Dict[str, Dict[str, int]] = {
+            'totals': {},
+            'alive': {}
+        }
+        self._objective_dirty = False
 
         # Initialize Pygame for 2D rendering
         self.pygame_initialized = False
@@ -69,6 +96,30 @@ class HUD:
             print(f"Failed to initialize Pygame: {e}")
             self.pygame_initialized = False
 
+    def _register_panel(self, panel: DirectFrame) -> DirectFrame:
+        self.hud_panels.append(panel)
+        return panel
+
+    def _register_element(self, element):
+        self.hud_elements.append(element)
+        return element
+
+    def _create_text(self, text: str, parent, pos, scale, fg, align=TextNode.ALeft):
+        element = OnscreenText(
+            text=text,
+            pos=pos,
+            scale=scale,
+            fg=fg,
+            align=align,
+            parent=parent,
+            mayChange=True,
+            shadow=(0, 0, 0, 0.85),
+            shadowOffset=(0.012, 0.012)
+        )
+        if getattr(self, 'ui_font', None):
+            element.setFont(self.ui_font)
+        return self._register_element(element)
+
     def setup_hud_elements(self):
         """Set up HUD display elements using Panda3D's GUI system."""
 
@@ -88,176 +139,125 @@ class HUD:
             return TextNode.getDefaultFont()
 
         loaded_font = load_default_font()
+        self.ui_font = loaded_font
 
         hud_parent = getattr(self.app, 'aspect2d', getattr(self.app, 'render2d', None))
         if hud_parent is None:
             raise RuntimeError("HUD requires a Panda3D application with aspect2d or render2d")
 
-        panel_texture = get_ui_panel_texture()
-        accent_color = (0.94, 0.75, 0.2, 1.0)  # Hunting green accent
+        # Reset collections before building
+        self.hud_elements = []
+        self.hud_panels = []
 
-        self.left_panel = DirectFrame(
+        panel_texture = get_ui_panel_texture()
+
+        # Left status panel
+        self.left_panel = self._register_panel(DirectFrame(
             parent=hud_parent,
-            frameColor=(1, 1, 1, 1),
-            frameSize=(-0.55, 0.45, -0.22, 0.2),
-            pos=(-0.95, 0, 0.84)
-        )
+            frameColor=self.theme['panel_tint'],
+            frameSize=(-0.36, 0.36, -0.18, 0.18),
+            pos=(-1.08, 0, 0.86)
+        ))
         self.left_panel.setTransparency(TransparencyAttrib.MAlpha)
         self.left_panel.setTexture(panel_texture)
 
-        self.right_panel = DirectFrame(
-            parent=hud_parent,
-            frameColor=(1, 1, 1, 1),
-            frameSize=(-0.55, 0.45, -0.22, 0.2),
-            pos=(0.95, 0, 0.84)
-        )
-        self.right_panel.setTransparency(TransparencyAttrib.MAlpha)
-        self.right_panel.setTexture(panel_texture)
-
-        self.weapon_panel = DirectFrame(
-            parent=hud_parent,
-            frameColor=(1, 1, 1, 1),
-            frameSize=(-0.45, 0.45, -0.14, 0.14),
-            pos=(0, 0, -0.88)
-        )
-        self.weapon_panel.setTransparency(TransparencyAttrib.MAlpha)
-        self.weapon_panel.setTexture(panel_texture)
-        self.hud_panels = [self.left_panel, self.right_panel, self.weapon_panel]
-
-        self.weapon_icon = OnscreenImage(
-            image=create_icon_texture('accuracy'),
-            parent=self.weapon_panel,
-            pos=(-0.36, 0, 0.03)
-        )
-        self.weapon_icon.setScale(0.06)
-        self.weapon_icon.setTransparency(TransparencyAttrib.MAlpha)
-        self.hud_elements.append(self.weapon_icon)
-
-        self.health_icon = OnscreenImage(
-            image=create_icon_texture('health'),
-            parent=self.left_panel,
-            pos=(-0.48, 0, 0.08)
-        )
-        self.health_icon.setScale(0.08)
-        self.health_icon.setTransparency(TransparencyAttrib.MAlpha)
-        self.hud_elements.append(self.health_icon)
+        self._create_text("Vitals", self.left_panel, (-0.32, 0.12), 0.045, self.theme['accent'])
 
         self.health_bar = DirectWaitBar(
             parent=self.left_panel,
             range=100,
             value=100,
-            frameSize=(-0.52, 0.52, -0.08, 0.08),
-            pos=(-0.05, 0, 0.08),
-            barColor=(0.86, 0.32, 0.28, 0.95),
-            frameColor=(0.12, 0.16, 0.2, 0.85)
+            frameSize=(-0.54, 0.54, -0.065, 0.065),
+            pos=(0.0, 0, 0.0),
+            barColor=(0.82, 0.29, 0.26, 0.95),
+            frameColor=(0.08, 0.1, 0.15, 0.9)
         )
-        self.health_bar.setScale(0.27)
-        self.hud_elements.append(self.health_bar)
+        self.health_bar.setScale(0.25)
+        self._register_element(self.health_bar)
 
-        self.health_text = OnscreenText(
-            text="100 HP",
-            pos=(0.32, 0.07),
-            scale=0.055,
-            fg=(0.92, 0.95, 0.98, 1),
-            align=TextNode.ARight,
+        self.health_icon = self._register_element(OnscreenImage(
+            image=create_icon_texture('health'),
             parent=self.left_panel,
-            mayChange=True
-        )
-        if loaded_font:
-            self.health_text.setFont(loaded_font)
-        self.hud_elements.append(self.health_text)
+            pos=(-0.32, 0, 0.02)
+        ))
+        self.health_icon.setScale(0.05)
+        self.health_icon.setTransparency(TransparencyAttrib.MAlpha)
 
-        self.score_icon = OnscreenImage(
-            image=create_icon_texture('score'),
-            parent=self.left_panel,
-            pos=(-0.48, 0, -0.06)
-        )
-        self.score_icon.setScale(0.07)
-        self.score_icon.setTransparency(TransparencyAttrib.MAlpha)
-        self.hud_elements.append(self.score_icon)
+        self.health_text = self._create_text("100 HP", self.left_panel, (0.3, 0.02), 0.055, self.theme['primary_text'], TextNode.ARight)
 
-        self.score_text = OnscreenText(
-            text="Score: 0",
-            pos=(-0.32, -0.06),
-            scale=0.055,
-            fg=(accent_color[0], accent_color[1], accent_color[2], 1.0),
-            align=TextNode.ALeft,
-            parent=self.left_panel,
-            mayChange=True
-        )
-        if loaded_font:
-            self.score_text.setFont(loaded_font)
-        self.hud_elements.append(self.score_text)
+        self.score_text = self._create_text("Score: 0", self.left_panel, (-0.32, -0.08), 0.05, self.theme['accent'], TextNode.ALeft)
+        self.kills_text = self._create_text("Harvested: 0", self.left_panel, (-0.32, -0.14), 0.045, self.theme['secondary_text'], TextNode.ALeft)
 
-        self.ammo_icon = OnscreenImage(
+        # Right combat panel
+        self.right_panel = self._register_panel(DirectFrame(
+            parent=hud_parent,
+            frameColor=self.theme['panel_tint'],
+            frameSize=(-0.36, 0.36, -0.18, 0.18),
+            pos=(1.08, 0, 0.86)
+        ))
+        self.right_panel.setTransparency(TransparencyAttrib.MAlpha)
+        self.right_panel.setTexture(panel_texture)
+
+        self._create_text("Ballistics", self.right_panel, (-0.32, 0.12), 0.045, self.theme['accent'])
+
+        self.ammo_text = self._create_text("Ammo 10 / 10", self.right_panel, (-0.32, 0.04), 0.05, self.theme['primary_text'])
+
+        self.ammo_bar = DirectWaitBar(
+            parent=self.right_panel,
+            range=1.0,
+            value=1.0,
+            frameSize=(-0.54, 0.54, -0.06, 0.06),
+            pos=(0.0, 0, -0.02),
+            barColor=(0.88, 0.74, 0.32, 0.95),
+            frameColor=(0.08, 0.1, 0.15, 0.88)
+        )
+        self.ammo_bar.setScale(0.24)
+        self._register_element(self.ammo_bar)
+
+        self.ammo_icon = self._register_element(OnscreenImage(
             image=create_icon_texture('ammo'),
             parent=self.right_panel,
-            pos=(-0.44, 0, 0.08)
-        )
-        self.ammo_icon.setScale(0.075)
+            pos=(-0.32, 0, -0.02)
+        ))
+        self.ammo_icon.setScale(0.045)
         self.ammo_icon.setTransparency(TransparencyAttrib.MAlpha)
-        self.hud_elements.append(self.ammo_icon)
 
-        self.ammo_text = OnscreenText(
-            text="10 / 10",
-            pos=(-0.18, 0.07),
-            scale=0.055,
-            fg=(1, 1, 1, 1),
-            align=TextNode.ARight,
-            parent=self.right_panel,
-            mayChange=True
-        )
-        if loaded_font:
-            self.ammo_text.setFont(loaded_font)
-        self.hud_elements.append(self.ammo_text)
+        self.accuracy_text = self._create_text("Accuracy: 0%", self.right_panel, (-0.32, -0.1), 0.045, self.theme['secondary_text'])
 
-        self.accuracy_icon = OnscreenImage(
+        # Objective panel
+        self.objective_panel = self._register_panel(DirectFrame(
+            parent=hud_parent,
+            frameColor=self.theme['panel_tint'],
+            frameSize=(-0.52, 0.52, -0.14, 0.14),
+            pos=(0, 0, 0.92)
+        ))
+        self.objective_panel.setTransparency(TransparencyAttrib.MAlpha)
+        self.objective_panel.setTexture(panel_texture)
+
+        self.objective_title = self._create_text("Active Objective", self.objective_panel, (0, 0.06), 0.05, self.theme['accent'], TextNode.ACenter)
+        self.objective_text = self._create_text("Explore the reserve", self.objective_panel, (0, -0.02), 0.045, self.theme['primary_text'], TextNode.ACenter)
+
+        # Weapon panel bottom
+        self.weapon_panel = self._register_panel(DirectFrame(
+            parent=hud_parent,
+            frameColor=self.theme['panel_tint'],
+            frameSize=(-0.45, 0.45, -0.12, 0.12),
+            pos=(0, 0, -0.9)
+        ))
+        self.weapon_panel.setTransparency(TransparencyAttrib.MAlpha)
+        self.weapon_panel.setTexture(panel_texture)
+
+        self.weapon_icon = self._register_element(OnscreenImage(
             image=create_icon_texture('accuracy'),
-            parent=self.right_panel,
-            pos=(-0.44, 0, -0.06)
-        )
-        self.accuracy_icon.setScale(0.075)
-        self.accuracy_icon.setTransparency(TransparencyAttrib.MAlpha)
-        self.hud_elements.append(self.accuracy_icon)
-
-        self.accuracy_text = OnscreenText(
-            text="Accuracy: 0%",
-            pos=(-0.14, -0.06),
-            scale=0.055,
-            fg=(0.82, 0.84, 0.88, 1),
-            align=TextNode.ARight,
-            parent=self.right_panel,
-            mayChange=True
-        )
-        if loaded_font:
-            self.accuracy_text.setFont(loaded_font)
-        self.hud_elements.append(self.accuracy_text)
-
-        self.weapon_text = OnscreenText(
-            text="Hunting Rifle",
-            pos=(0, 0.03),
-            scale=0.06,
-            fg=(1, 1, 1, 1),
-            align=TextNode.ACenter,
             parent=self.weapon_panel,
-            mayChange=True
-        )
-        if loaded_font:
-            self.weapon_text.setFont(loaded_font)
-        self.hud_elements.append(self.weapon_text)
+            pos=(-0.36, 0, 0.0)
+        ))
+        self.weapon_icon.setScale(0.05)
+        self.weapon_icon.setTransparency(TransparencyAttrib.MAlpha)
 
-        self.weapon_status_text = OnscreenText(
-            text="Ready",
-            pos=(0, -0.06),
-            scale=0.045,
-            fg=(0.75, 0.78, 0.84, 1),
-            align=TextNode.ACenter,
-            parent=self.weapon_panel,
-            mayChange=True
-        )
-        if loaded_font:
-            self.weapon_status_text.setFont(loaded_font)
-        self.hud_elements.append(self.weapon_status_text)
+        self.weapon_label = self._create_text("Equipped", self.weapon_panel, (-0.28, 0.05), 0.045, self.theme['secondary_text'])
+        self.weapon_text = self._create_text("Hunting Rifle", self.weapon_panel, (0.08, 0.05), 0.055, self.theme['primary_text'], TextNode.ALeft)
+        self.weapon_status_text = self._create_text("Ready", self.weapon_panel, (0.0, -0.04), 0.045, self.theme['secondary_text'], TextNode.ACenter)
 
         self.create_crosshair()
 
@@ -271,7 +271,7 @@ class HUD:
             self.crosshair_image = OnscreenImage(
                 image=texture,
                 pos=(0, 0, 0),
-                scale=0.055,
+                scale=0.045,
                 parent=parent
             )
             self.crosshair_image.setTransparency(TransparencyAttrib.MAlpha)
@@ -285,6 +285,9 @@ class HUD:
         if not self.player:
             return
 
+        changed = False
+        self._idle_time += dt
+
         # Update health display
         health = getattr(self.player, 'health', 100)
         if hasattr(self, 'health_bar'):
@@ -294,12 +297,20 @@ class HUD:
                 max_value = 100.0
             self.health_bar['value'] = max(0.0, min(max_value, float(health)))
         self.health_text.setText(f"{health:.0f} HP")
+        if self._last_state['health'] != health:
+            self._last_state['health'] = health
+            changed = True
 
         # Update ammo display
         if hasattr(self.player, 'weapon'):
             current_ammo = self.player.weapon.current_ammo
             max_ammo = self.player.weapon.max_ammo
-            self.ammo_text.setText(f"{current_ammo} / {max_ammo}")
+            self.ammo_text.setText(f"Ammo {current_ammo} / {max_ammo}")
+            ratio = 0.0 if max_ammo <= 0 else current_ammo / float(max_ammo)
+            self.ammo_bar['value'] = max(0.0, min(1.0, ratio))
+            if self._last_state['ammo'] != ratio:
+                self._last_state['ammo'] = ratio
+                changed = True
 
             # Update weapon name
             self.weapon_text.setText(self.player.weapon.name)
@@ -312,8 +323,23 @@ class HUD:
         else:
             self.weapon_status_text.setText("Unarmed")
 
+        weapon_state = self.weapon_status_text.getText()
+        if self._last_state['weapon_status'] != weapon_state:
+            self._last_state['weapon_status'] = weapon_state
+            changed = True
+
         # Update score display
         self.score_text.setText(f"Score: {self.score}")
+        if self._last_state['score'] != self.score:
+            self._last_state['score'] = self.score
+            changed = True
+
+        if self._last_state['kills'] != self.kills:
+            self._last_state['kills'] = self.kills
+            self.kills_text.setText(f"Harvested: {self.kills}")
+            changed = True
+        else:
+            self.kills_text.setText(f"Harvested: {self.kills}")
 
         # Update accuracy
         if self.shots_fired > 0:
@@ -321,6 +347,10 @@ class HUD:
             self.accuracy_text.setText(f"Accuracy: {accuracy:.1f}%")
         else:
             self.accuracy_text.setText("Accuracy: 0%")
+            accuracy = 0.0
+        if self._last_state['accuracy'] != accuracy:
+            self._last_state['accuracy'] = accuracy
+            changed = True
 
         # Update crosshair color based on weapon state
         if self.crosshair_image:
@@ -330,6 +360,13 @@ class HUD:
                 self.crosshair_image.setColorScale(self.crosshair_color_empty)
             else:
                 self.crosshair_image.setColorScale(self.crosshair_color_ready)
+
+        if self._objective_dirty:
+            changed = True
+            self._objective_dirty = False
+            self._refresh_objective_text()
+
+        self._update_fade(dt, changed)
 
         # Render Pygame overlay if available
         if self.pygame_initialized:
@@ -349,10 +386,97 @@ class HUD:
         # Convert Pygame surface to Panda3D texture if needed
         # This is optional and can be used for more complex 2D rendering
 
+    def _set_opacity(self, opacity: float):
+        if abs(opacity - self._current_opacity) <= 0.01:
+            return
+        self._current_opacity = opacity
+        for panel in getattr(self, 'hud_panels', []):
+            if panel:
+                panel.setColorScale(1, 1, 1, opacity)
+        for element in getattr(self, 'hud_elements', []):
+            if hasattr(element, 'setColorScale'):
+                element.setColorScale(1, 1, 1, opacity)
+
+    def _update_fade(self, dt: float, changed: bool):
+        if changed:
+            self._idle_time = 0.0
+
+        target_opacity = 1.0 if self._idle_time < self.fade_delay else self.fade_target_opacity
+
+        if target_opacity < self._current_opacity:
+            fade_speed = self.fade_duration if self.fade_duration > 0 else 0.6
+            delta = (self._current_opacity - target_opacity)
+            if fade_speed <= 0:
+                new_opacity = target_opacity
+            else:
+                new_opacity = max(target_opacity, self._current_opacity - (dt / fade_speed) * delta)
+        else:
+            new_opacity = min(1.0, target_opacity * 0.5 + self._current_opacity * 0.5)
+
+        self._set_opacity(max(0.1, min(1.0, new_opacity)))
+
+    def _refresh_objective_text(self):
+        totals = self._objective_state.get('totals', {})
+        alive = self._objective_state.get('alive', {})
+        if not totals:
+            self.objective_text.setText("Explore the reserve")
+            self.objective_text.setFg(self.theme['primary_text'])
+            self._last_state['objective'] = None
+            return
+
+        alive_total = sum(max(0, count) for count in alive.values())
+        grand_total = sum(max(0, count) for count in totals.values())
+        harvested_total = max(0, grand_total - alive_total)
+
+        segments = []
+        for species, total in totals.items():
+            remaining = max(0, alive.get(species, 0))
+            harvested = max(0, total - remaining)
+            segments.append(f"{species.title()}: {harvested}/{total}")
+
+        detail = "   ".join(segments)
+        header_line = f"Harvest wildlife ({harvested_total}/{grand_total})" if grand_total else "Survey the reserve"
+        self.objective_text.setText(f"{header_line}\n{detail}")
+
+        remaining_ratio = 0 if grand_total == 0 else alive_total / grand_total
+        if remaining_ratio <= 0.2:
+            self.objective_text.setFg(self.theme['warning'])
+        else:
+            self.objective_text.setFg(self.theme['primary_text'])
+
+        new_state_value = (harvested_total, grand_total)
+        if self._last_state['objective'] != new_state_value:
+            self._last_state['objective'] = new_state_value
+
+    def set_objective_targets(self, species_totals: Dict[str, int]):
+        cleaned_totals = {k: max(0, int(v)) for k, v in species_totals.items() if v}
+        self._objective_state['totals'] = cleaned_totals
+        self._objective_state['alive'] = cleaned_totals.copy()
+        self._objective_dirty = True
+        self._idle_time = 0.0
+        self._refresh_objective_text()
+
+    def update_objective_counts(self, alive_by_species: Dict[str, int]):
+        if not isinstance(alive_by_species, dict):
+            return
+        self._objective_state['alive'] = {k: max(0, int(v)) for k, v in alive_by_species.items()}
+        self._objective_dirty = True
+        self._refresh_objective_text()
+
+    def register_animal_kill(self, species: str):
+        species_key = species.lower() if species else ''
+        alive = self._objective_state.get('alive', {})
+        if species_key in alive:
+            alive[species_key] = max(0, alive[species_key] - 1)
+            self._objective_dirty = True
+            self._refresh_objective_text()
+        self._idle_time = 0.0
+
     def add_score(self, points: int):
         """Add points to the player's score."""
         self.score += points
         print(f"Score updated: +{points}, Total: {self.score}")
+        self._idle_time = 0.0
 
     def record_shot(self, hit: bool = False):
         """Record a shot fired and whether it hit a target."""
@@ -360,6 +484,7 @@ class HUD:
         if hit:
             self.shots_hit += 1
             self.kills += 1
+        self._idle_time = 0.0
 
     def show_message(self, message: str, duration: float = 3.0, color: Tuple[float, float, float, float] = (1, 1, 1, 1)):
         """Display a temporary message on screen."""

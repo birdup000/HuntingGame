@@ -9,6 +9,7 @@ from graphics.texture_factory import (
     create_bark_texture,
     create_leaf_texture,
     create_water_texture,
+    create_flower_patch_texture,
 )
 
 
@@ -25,6 +26,7 @@ class DecorManager:
         self._add_water_features()
         self._add_fallen_logs()
         self._add_shrubs()
+        self._add_flower_meadows()
 
     def cleanup(self):
         for node in self.decor_nodes:
@@ -124,3 +126,29 @@ class DecorManager:
             shrub.setColorScale(0.85 + random.uniform(-0.1, 0.1), 1.0, 0.85, 1.0)
             shrub.setShaderAuto()
             self._register(shrub)
+
+    def _add_flower_meadows(self):
+        if not self.render:
+            return
+
+        flower_texture = create_flower_patch_texture(160)
+        cm = CardMaker('flower_patch')
+        cm.setFrame(-1, 1, -1, 1)
+
+        patch_centers = [
+            Vec3(14, 18, 0),
+            Vec3(-20, -12, 0),
+            Vec3(6, 32, 0),
+        ]
+
+        for center in patch_centers:
+            z = self._terrain_height(center.x, center.y) + 0.02
+            patch = self.render.attachNewNode(cm.generate())
+            patch.setTransparency(TransparencyAttrib.MAlpha)
+            patch.setTexture(flower_texture, 1)
+            patch.setPos(center.x, center.y, z)
+            patch.setP(-90)
+            patch.setScale(3.0 + random.uniform(-0.5, 0.7))
+            patch.setColorScale(0.94 + random.uniform(-0.04, 0.06), 1.0, 0.94, 0.92)
+            patch.setShaderAuto()
+            self._register(patch)

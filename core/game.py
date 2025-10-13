@@ -15,6 +15,8 @@ from panda3d.core import Vec3, CardMaker, TransparencyAttrib
 import random
 import config
 
+from typing import Dict, Optional
+
 # Import advanced graphics systems
 from graphics.materials import TerrainPBR, EnvironmentMaterials
 from graphics.lighting import DynamicLighting
@@ -37,6 +39,10 @@ class Game:
         self.game_time = 0.0
         self.sky = None
         self.rocks = []
+        self.animal_targets: Dict[str, int] = {}
+        self._pending_objective_counts: Dict[str, int] = {}
+        self._last_reported_objective_counts: Optional[Dict[str, int]] = None
+        self._objective_initialized = False
         
         # Initialize advanced graphics systems
         self.terrain_pbr = TerrainPBR()
@@ -213,6 +219,7 @@ class Game:
         if self.player:
             self.ui_manager.setup_hud(self.player)
             self.ui_manager.toggle_hud_visibility(True)
+            self._sync_hud_objectives(force=True)
 
         print("Gameplay started")
 
@@ -325,38 +332,75 @@ class Game:
         animal_cfg = config.ANIMAL_CONFIG
         spawn_radius = animal_cfg['spawn_radius']
 
-        # Spawn deer using config values
-        for _ in range(animal_cfg['deer_count']):
-            # Ensure deer don't spawn too close to player spawn
-            x, y = 0, 0
-            attempts = 0
-            while attempts < 20 and (x**2 + y**2 < 40):  # Keep distance from center (>6.3 units)
-                x = random.uniform(-spawn_radius, spawn_radius)
-                y = random.uniform(-spawn_radius, spawn_radius)
-                attempts += 1
+        deer_positions = []
+        scenic_deer_spawns = [(22, 32), (-26, 20), (10, 38)]
+        for sx, sy in scenic_deer_spawns:
+            if len(deer_positions) >= animal_cfg['deer_count']:
+                break
+            deer_positions.append((sx, sy))
+
+        while len(deer_positions) < animal_cfg['deer_count']:
+            x = random.uniform(-spawn_radius, spawn_radius)
+            y = random.uniform(-spawn_radius, spawn_radius)
+            if x ** 2 + y ** 2 < 36:  # keep deer away from immediate spawn radius
+                continue
+            deer_positions.append((x, y))
+
+        for x, y in deer_positions:
             z = self.terrain.get_height(x, y) if self.terrain else 0.0
             deer = Deer(Vec3(x, y, z))
             deer.render(self.app.render)
             self.animals.append(deer)
-            # Add to collision detection
             if self.player:
                 self.player.add_animal_to_collision(deer)
 
-        # Spawn rabbits using config values
-        for _ in range(animal_cfg['rabbit_count']):
-            x, y = 0, 0
-            attempts = 0
-            while attempts < 10 and (x**2 + y**2 < 10):  # Keep some distance but closer than deer
-                x = random.uniform(-spawn_radius, spawn_radius)
-                y = random.uniform(-spawn_radius, spawn_radius)
-                attempts += 1
+        rabbit_positions = []
+        scenic_rabbit_spawns = [(8, -6), (-12, -14), (6, 18)]
+        for sx, sy in scenic_rabbit_spawns:
+            if len(rabbit_positions) >= animal_cfg['rabbit_count']:
+                break
+            rabbit_positions.append((sx, sy))
+
+        while len(rabbit_positions) < animal_cfg['rabbit_count']:
+            x = random.uniform(-spawn_radius, spawn_radius)
+            y = random.uniform(-spawn_radius, spawn_radius)
+            if x ** 2 + y ** 2 < 9:
+                continue
+            rabbit_positions.append((x, y))
+
+        for x, y in rabbit_positions:
             z = self.terrain.get_height(x, y) if self.terrain else 0.0
             rabbit = Rabbit(Vec3(x, y, z))
             rabbit.render(self.app.render)
             self.animals.append(rabbit)
-            # Add to collision detection
             if self.player:
                 self.player.add_animal_to_collision(rabbit)
+
+        self.animal_targets = self._current_animal_counts()
+        self._sync_hud_objectives(force=True)
+
+    def _current_animal_counts(self) -> Dict[str, int]:
+        counts: Dict[str, int] = {}
+        for animal in self.animals:
+            species = getattr(animal, 'species', 'unknown')
+            key = species.lower() if isinstance(species, str) else 'unknown'
+            counts[key] = counts.get(key, 0) + 1
+        return counts
+
+    def _sync_hud_objectives(self, force: bool = False):
+        counts = self._current_animal_counts()
+        self._pending_objective_counts = counts
+
+        if self.ui_manager and self.ui_manager.hud:
+            if self.animal_targets and (force or not self._objective_initialized):
+                self.ui_manager.hud.set_objective_targets(self.animal_targets)
+                self._objective_initialized = True
+            if force or self._last_reported_objective_counts != counts:
+                self.ui_manager.hud.update_objective_counts(counts)
+                self._last_reported_objective_counts = counts.copy()
+        else:
+            self._objective_initialized = False
+            self._last_reported_objective_counts = None
 
     def setup_lighting(self):
         """Set up realistic lighting for the scene."""
@@ -509,6 +553,7 @@ class Game:
                     animal.cleanup()
 
             self.animals = alive_animals
+            self._sync_hud_objectives()
 
             # Check for game over conditions (e.g., player health)
             if self.player and hasattr(self.player, 'health') and self.player.health <= 0:
@@ -594,6 +639,7 @@ class Game:
 
             self.ui_manager.add_score(points)
             self.ui_manager.record_shot(hit=True)
+            self.ui_manager.hud.register_animal_kill(getattr(animal, 'species', ''))
             self.ui_manager.show_message(f"{animal.species} killed! +{points} points", 2.0)
 
     def cleanup_game(self):
@@ -624,3 +670,8 @@ class Game:
             if hasattr(self.ui_manager, 'hud') and self.ui_manager.hud:
                 self.ui_manager.hud.cleanup()
                 self.ui_manager.hud = None
+
+        self.animal_targets.clear()
+        self._pending_objective_counts = {}
+        self._last_reported_objective_counts = None
+        self._objective_initialized = False

@@ -129,6 +129,64 @@ def create_leaf_texture(size: int = 128) -> Texture:
     return _cache_texture(cache_key, builder)
 
 
+def create_flower_patch_texture(size: int = 128) -> Texture:
+    cache_key = f"flower-patch-{size}"
+
+    def builder() -> Texture:
+        image = PNMImage(size, size, 4)
+        center = size / 2.0
+        radius = size * 0.48
+
+        petal_palette = [
+            (0.94, 0.82, 0.28),
+            (0.93, 0.68, 0.74),
+            (0.88, 0.9, 0.95),
+            (0.78, 0.86, 0.4),
+        ]
+
+        for x in range(size):
+            for y in range(size):
+                dx = x - center
+                dy = y - center
+                dist = math.sqrt(dx * dx + dy * dy)
+                if dist > radius:
+                    image.setAlpha(x, y, 0.0)
+                    continue
+
+                falloff = 1.0 - (dist / radius)
+                base = 0.18 + falloff * 0.22
+                noise = (_hash_noise(x, y) - 0.5) * 0.05
+                r = max(0.0, min(1.0, base * 0.6 + noise))
+                g = max(0.0, min(1.0, 0.3 + base * 0.8 + noise * 1.2))
+                b = max(0.0, min(1.0, base * 0.45 + noise * 0.6))
+                image.setXel(x, y, r, g, b)
+                alpha = 0.75 + falloff * 0.2
+                image.setAlpha(x, y, max(0.0, min(1.0, alpha)))
+
+        for x in range(size):
+            for y in range(size):
+                dx = x - center
+                dy = y - center
+                dist = math.sqrt(dx * dx + dy * dy)
+                if dist > radius * 0.96:
+                    continue
+                highlight = _hash_noise(x + size, y - size)
+                if highlight > 0.87:
+                    petals = petal_palette[int(highlight * len(petal_palette)) % len(petal_palette)]
+                    image.setXel(x, y, *petals)
+                    image.setAlpha(x, y, 0.98)
+
+        texture = Texture("flower-patch")
+        texture.load(image)
+        texture.setWrapU(Texture.WMClamp)
+        texture.setWrapV(Texture.WMClamp)
+        texture.setMagfilter(Texture.FTLinear)
+        texture.setMinfilter(Texture.FTLinearMipmapLinear)
+        return texture
+
+    return _cache_texture(cache_key, builder)
+
+
 def create_bark_texture(size: int = 64) -> Texture:
     cache_key = f"bark-{size}"
 

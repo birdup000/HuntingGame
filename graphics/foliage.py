@@ -169,40 +169,127 @@ class GrassField:
 
 
 class TreeFactory:
-    """Procedural tree generator with billboarding for foliage."""
+    """Procedural tree generator with layered foliage and tapered trunks."""
 
     def __init__(self, render_node):
         self.render = render_node
-        self.leaf_texture = create_leaf_texture()
-        self.bark_texture = create_bark_texture()
+        self.leaf_texture = create_leaf_texture(128)
+        self.bark_texture = create_bark_texture(128)
+        self._rng = random.Random(4871)
+
+    def _create_trunk_node(self, height: float, radius: float) -> NodePath:
+        segments = 12
+        format = GeomVertexFormat.getV3n3t2()
+        vdata = GeomVertexData('tree_trunk', format, Geom.UHStatic)
+        vertex = GeomVertexWriter(vdata, 'vertex')
+        normal = GeomVertexWriter(vdata, 'normal')
+        texcoord = GeomVertexWriter(vdata, 'texcoord')
+
+        top_radius = radius * 0.7
+
+        for i in range(segments):
+            angle = (2 * math.pi * i) / segments
+            cos_a = math.cos(angle)
+            sin_a = math.sin(angle)
+            vertex.addData3f(cos_a * radius, sin_a * radius, 0)
+            normal.addData3f(cos_a, sin_a, 0)
+            texcoord.addData2f(i / segments, 0.0)
+            vertex.addData3f(cos_a * top_radius, sin_a * top_radius, height)
+            normal.addData3f(cos_a, sin_a, 0)
+            texcoord.addData2f(i / segments, height * 0.35)
+
+        bottom_center_idx = segments * 2
+        vertex.addData3f(0, 0, 0)
+        normal.addData3f(0, 0, -1)
+        texcoord.addData2f(0.5, 0.0)
+
+        top_center_idx = segments * 2 + 1
+        vertex.addData3f(0, 0, height)
+        normal.addData3f(0, 0, 1)
+        texcoord.addData2f(0.5, height * 0.35)
+
+        prim = GeomTriangles(Geom.UHStatic)
+        for i in range(segments):
+            next_i = (i + 1) % segments
+            bottom_idx = i * 2
+            top_idx = bottom_idx + 1
+            next_bottom_idx = next_i * 2
+            next_top_idx = next_bottom_idx + 1
+
+            prim.addVertices(bottom_idx, top_idx, next_top_idx)
+            prim.addVertices(bottom_idx, next_top_idx, next_bottom_idx)
+
+            prim.addVertices(bottom_center_idx, next_bottom_idx, bottom_idx)
+            prim.addVertices(top_center_idx, top_idx, next_top_idx)
+
+        geom = Geom(vdata)
+        geom.addPrimitive(prim)
+        geom_node = GeomNode('tree_trunk_geom')
+        geom_node.addGeom(geom)
+        trunk_np = NodePath(geom_node)
+        trunk_np.setTexture(self.bark_texture, 1)
+        trunk_np.setTwoSided(False)
+        trunk_np.setTransparency(TransparencyAttrib.MNone)
+        trunk_np.setColorScale(0.9, 0.84, 0.74, 1.0)
+        return trunk_np
 
     def create_tree(self, position: Vec3, scale: float = 1.0) -> NodePath:
         tree_root = self.render.attachNewNode('tree')
-        trunk_height = 4.0 * scale
-        trunk_radius = 0.22 * scale
+        trunk_height = 4.4 * scale
+        trunk_radius = 0.24 * scale
 
-        for heading in (0, 45, 90, 135):
-            cm = CardMaker('branch_panel')
-            cm.setFrame(-trunk_radius, trunk_radius, 0, trunk_height)
-            trunk_panel = tree_root.attachNewNode(cm.generate())
-            trunk_panel.setH(heading)
-            trunk_panel.setTexture(self.bark_texture, 1)
-            trunk_panel.setTwoSided(True)
+        trunk = self._create_trunk_node(trunk_height, trunk_radius)
+        trunk.reparentTo(tree_root)
+        trunk.setH(self._rng.uniform(-5.0, 5.0))
+        trunk.setP(self._rng.uniform(-2.0, 2.0))
 
-        canopy = tree_root.attachNewNode('leaf_cluster')
-        canopy.setZ(trunk_height * 0.85)
-        leaf_radius = 2.2 * scale
+        branch_card = CardMaker('branch_panel')
+        branch_card.setFrame(-0.14, 0.14, -0.9, 0.9)
+        for base_heading in (28, -32, 155):
+            branch = tree_root.attachNewNode(branch_card.generate())
+            branch.setTexture(self.bark_texture, 1)
+            branch.setTwoSided(True)
+            branch.setTransparency(TransparencyAttrib.MAlpha)
+            branch.setPos(0, 0, trunk_height * 0.55 + self._rng.uniform(-0.25, 0.2))
+            branch.setH(base_heading + self._rng.uniform(-12, 12))
+            branch.setP(-20 + self._rng.uniform(-6, 6))
+            branch.setScale(trunk_radius * 3.3, 1.0, trunk_radius * 1.1)
+            branch.setColorScale(0.78, 0.7, 0.58, 1.0)
 
-        for heading in (0, 60, 120):
-            cm = CardMaker('leaf_panel')
-            cm.setFrame(-leaf_radius, leaf_radius, -leaf_radius, leaf_radius)
-            leaf_card = canopy.attachNewNode(cm.generate())
-            leaf_card.setH(heading)
-            leaf_card.setTexture(self.leaf_texture, 1)
-            leaf_card.setTransparency(TransparencyAttrib.MAlpha)
-            leaf_card.setTwoSided(True)
+        canopy = tree_root.attachNewNode('leaf_canopy')
+        canopy.setZ(trunk_height * 0.82)
+        leaf_radius = 2.4 * scale
 
+        leaf_layer = CardMaker('leaf_layer')
+        leaf_layer.setFrame(-1, 1, -1, 1)
+        for _ in range(6):
+            layer = canopy.attachNewNode(leaf_layer.generate())
+            layer.setTexture(self.leaf_texture, 1)
+            layer.setTransparency(TransparencyAttrib.MAlpha)
+            layer.setTwoSided(True)
+            layer.setScale(leaf_radius * self._rng.uniform(0.72, 1.12))
+            layer.setH(self._rng.uniform(0, 360))
+            layer.setP(self._rng.uniform(-18, 18))
+            layer.setPos(self._rng.uniform(-0.35, 0.35), self._rng.uniform(-0.35, 0.35), self._rng.uniform(-0.45, 0.55))
+            layer.setColorScale(0.88 + self._rng.uniform(-0.07, 0.08), 1.0, 0.86, 1.0)
+
+        sprig_card = CardMaker('leaf_sprig')
+        sprig_card.setFrame(-0.6, 0.6, -1.3, 1.3)
+        for _ in range(3):
+            sprig = canopy.attachNewNode(sprig_card.generate())
+            sprig.setTexture(self.leaf_texture, 1)
+            sprig.setTransparency(TransparencyAttrib.MAlpha)
+            sprig.setTwoSided(True)
+            sprig.setScale(leaf_radius * 0.58)
+            sprig.setH(self._rng.uniform(0, 360))
+            sprig.setP(-62 + self._rng.uniform(-12, 12))
+            sprig.setPos(self._rng.uniform(-0.25, 0.25), self._rng.uniform(-0.25, 0.25), leaf_radius * 0.35 + self._rng.uniform(-0.2, 0.28))
+            sprig.setColorScale(0.82, 0.95 + self._rng.uniform(-0.05, 0.04), 0.78, 1.0)
+
+        canopy.flattenLight()
         tree_root.setPos(position)
+        tree_root.setH(tree_root.getH() + self._rng.uniform(-8, 8))
+        tree_root.setP(self._rng.uniform(-2.5, 2.5))
         tree_root.setShaderAuto()
         return tree_root
 
