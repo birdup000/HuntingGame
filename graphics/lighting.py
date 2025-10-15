@@ -85,8 +85,8 @@ class DynamicLighting:
         
         # Volumetric fog for atmosphere depth
         fog = Fog('atmosphere')
-        fog.setColor(0.5, 0.55, 0.7)
-        fog.setExpDensity(0.002)
+        fog.setColor(0.65, 0.75, 0.85)
+        fog.setExpDensity(0.003)
         self.render.setFog(fog)
         
         # Enable PBR lighting model
