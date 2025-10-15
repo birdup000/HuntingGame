@@ -129,12 +129,16 @@ class PBRTerrain:
                 vertex.addData3f(pos.x, pos.y, pos.z)
                 normal.addData3f(normal_vec.x, normal_vec.y, normal_vec.z)
                 
-                # Base color based on zone
+                # Base color based on zone with height-based variation
                 base_color = self._get_zone_color(zone, h)
-                color.addData4f(*base_color)
+                # Add subtle height-based brightness variation
+                height_factor = 1.0 + (h / max(abs(self.height_map.max()), 1)) * 0.15
+                varied_color = tuple(min(1.0, c * height_factor) for c in base_color)
+                color.addData4f(*varied_color)
                 
-                # UV coordinates with proper tiling for texturing
-                uv_scale = max(self.width, self.height) / 10.0  # Better scaling
+                # UV coordinates with improved tiling for more texture detail
+                # Use smaller scale for more repetition and detail
+                uv_scale = 4.0  # Increased repetition for more detail
                 texcoord.addData2f(
                     x / self.width * uv_scale,
                     y / self.height * uv_scale
@@ -169,12 +173,14 @@ class PBRTerrain:
         
         # Store reference for faster access
         self.terrain_node_path = terrain_node_path
+        self.terrain_node = terrain_node  # Store main node reference
 
         if self.terrain_texture:
-            # Apply texture properly
+            # Apply texture with improved detail settings
             self.terrain_node_path.setTexture(self.terrain_texture, 1)
             texture_stage = TextureStage.getDefault()
-            tile_scale = max(self.width, self.height) / 8.0  # More texture detail
+            # Use smaller tile scale for more visible detail
+            tile_scale = 2.5  # Reduced for more texture visibility
             self.terrain_node_path.setTexScale(texture_stage, tile_scale, tile_scale)
         
         return terrain_node
@@ -211,12 +217,12 @@ class PBRTerrain:
     def _get_zone_color(self, zone, height):
         """Get base color for material zone."""
         colors = {
-            'snow': (0.95, 0.98, 1.0, 1.0),      # Snow white
-            'rock': (0.6, 0.6, 0.55, 1.0),      # Better rock color
-            'wet': (0.2, 0.3, 0.5, 1.0),       # Blue-grey for wet areas
-            'forest': (0.15, 0.4, 0.1, 1.0)    # Vibrant green for forest
+            'snow': (0.90, 0.92, 0.95, 1.0),      # White snow
+            'rock': (0.45, 0.45, 0.42, 1.0),     # Gray rock
+            'wet': (0.15, 0.22, 0.35, 1.0),     # Dark blue-gray wet areas
+            'forest': (0.12, 0.32, 0.08, 1.0)    # Dark green for forest
         }
-        return colors.get(zone, (0.4, 0.3, 0.2, 1.0))  # Default brow
+        return colors.get(zone, (0.30, 0.22, 0.15, 1.0))  # Dark brown default
     
     def apply_dynamic_materials(self, player_pos):
         """Apply dynamic materials based on current conditions."""

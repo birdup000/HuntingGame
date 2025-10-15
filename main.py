@@ -34,10 +34,10 @@ class MainApp(ShowBase):
         self.render2d.setDepthWrite(False)  # Ensure 2D elements don't write to depth buffer
         
         # Set up proper render-to-2D separation with explicit sorting
+        # Create a proper render bin for 3D scene first
         if hasattr(self, 'render'):
             self.render.setDepthTest(True)  # Enable depth test for 3D
             self.render.setDepthWrite(True)  # Enable depth writing for 3D
-            self.render.setBin('default', 0)  # Ensure 3D renders first
             
         # Set up render2d with proper bin sorting for UI
         self.render2d.setBin('fixed', 60)  # UI renders last

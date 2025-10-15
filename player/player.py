@@ -243,8 +243,8 @@ class Player:
             
             # Prevent camera from going below terrain
             terrain_height = self.get_terrain_height(camera_pos.getX(), camera_pos.getY())
-            if camera_pos.getZ() < terrain_height + 0.5:  # Keep 0.5m above terrain
-                camera_pos.setZ(terrain_height + 0.5)
+            if camera_pos.getZ() < terrain_height + 1.5:  # Keep 1.5m above terrain (better visibility)
+                camera_pos.setZ(terrain_height + 1.5)
             
             self.camera_node.setPos(camera_pos)
 

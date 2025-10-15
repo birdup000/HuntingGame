@@ -798,7 +798,7 @@ class SettingsMenu(BaseMenu):
 
     def _on_fullscreen_toggle(self, setting_name):
         """Handle fullscreen toggle from checkbox."""
-        current_value = self.check_buttons[setting_name].indicatorValue
+        current_value = self.check_buttons[setting_name]['indicatorValue']
         self.settings[setting_name] = current_value
         print(f"{setting_name} toggle: {current_value}")
         
@@ -816,7 +816,7 @@ class SettingsMenu(BaseMenu):
 
     def _on_vsync_toggle(self, setting_name):
         """Handle VSync toggle from checkbox."""
-        current_value = self.check_buttons[setting_name].indicatorValue
+        current_value = self.check_buttons[setting_name]['indicatorValue']
         self.settings[setting_name] = current_value
         print(f"{setting_name} toggle: {current_value}")
 
@@ -842,7 +842,7 @@ class SettingsMenu(BaseMenu):
         for key, slider in self.sliders.items():
             self.settings[key] = slider['value']
         for key, checkbox in self.check_buttons.items():
-            self.settings[key] = checkbox.indicatorValue
+            self.settings[key] = checkbox['indicatorValue']
             
         print(f"Settings applied: {self.settings}")
         

@@ -11,7 +11,7 @@ from panda3d.core import (
 )
 from direct.task import Task
 
-from graphics.texture_factory import create_bark_texture, create_leaf_texture
+from graphics.texture_factory import create_bark_texture, create_leaf_texture, create_grass_texture
 
 
 class WindPhysics:
@@ -106,26 +106,30 @@ class GrassField:
         # Use instanced rendering for performance
         format = GeomVertexFormat.getV3n3cpt2()
         
-        vdata = GeomVertexData('grass', format, Geom.UHDynamic)
+        vdata = GeomVertexData('grass', format, Geom.UHStatic)
         vertex = GeomVertexWriter(vdata, 'vertex')
         normal = GeomVertexWriter(vdata, 'normal')
         color = GeomVertexWriter(vdata, 'color')
         texcoord = GeomVertexWriter(vdata, 'texcoord')
         
-        # Create single grass blade template
+        # Create single grass blade template with correct normals and texture coords
         blade_verts = [
-            (-0.02, 0, 0, 0, 0, 1, 0, 0, 1),   # Bottom left
-            (0.02, 0, 0, 0, 0, 1, 1, 0, 1),    # Bottom right
-            (0.01, 0, 0.3, 0, 0, 1, 1, 1, 0),  # Top right
-            (-0.01, 0, 0.3, 0, 0, 1, 0, 1, 0)  # Top left
+            (-0.02, 0, 0,     1, 0, 0,     0.1, 0.4, 0.05,     0, 0),   # Bottom left
+            (0.02, 0, 0,      1, 0, 0,     0.1, 0.4, 0.05,     1, 0),   # Bottom right
+            (0.01, 0, 0.3,    1, 0, 0,     0.1, 0.4, 0.05,     1, 1),   # Top right
+            (-0.01, 0, 0.3,   1, 0, 0,     0.1, 0.4, 0.05,     0, 1)    # Top left
         ]
         
-        # Add vertices
+        # Add vertices with proper format: vertex(x,y,z), normal(x,y,z), color(r,g,b), texcoord(u,v)
         for v in blade_verts:
+            # Extract vertex position (x, y, z)
             vertex.addData3f(v[0], v[1], v[2])
+            # Extract normal vector (x, y, z)
             normal.addData3f(v[3], v[4], v[5])
-            color.addData3f(0.1, 0.4, 0.05)  # Green
-            texcoord.addData2f(v[6], v[7])
+            # Extract color (r, g, b) - using the values directly here since they're per-vertex
+            color.addData3f(v[6], v[7], v[8])
+            # Extract texture coordinates (u, v)
+            texcoord.addData2f(v[9], v[10])
             
         # Create triangles
         tris = GeomTriangles(Geom.UHStatic)
@@ -135,18 +139,25 @@ class GrassField:
         geom = Geom(vdata)
         geom.addPrimitive(tris)
         
+        # Create and load grass texture
+        self.grass_texture = create_leaf_texture(128)  # Use existing leaf texture for now
+        
         # Create node
         self.grass_template = NodePath('grass_blade')
         # Create GeomNode and add the geom to it
         grass_gnode = GeomNode('grass_geom_node')
         grass_gnode.addGeom(geom)
         self.grass_template = self.grass_template.attachNewNode(grass_gnode)
+        self.grass_template.setTexture(self.grass_texture, 1)
+        self.grass_template.setTransparency(True)  # Enable transparency for grass
+        self.grass_template.setDepthWrite(True)   # Ensure proper depth writing
+        self.grass_template.setTwoSided(True)      # Make grass visible from both sides
         
     def _position_grass_blades(self):
         """Position multiple instances of grass blades."""
         # Simple grass placement without instancing for now
         # Spread out blades
-        for i in range(min(self.density, 1000)):  # Lower density for performance
+        for i in range(min(self.density, 500)):  # Lower density for performance
             x = random.uniform(-self.width/2, self.width/2)
             y = random.uniform(-self.height/2, self.height/2)
             

@@ -54,7 +54,7 @@ class TerrainPBR:
         """Create realistic terrain materials using PBR principles."""
         # Forest floor material
         self.forest_floor = PBRMaterial(
-            base_color=(0.1, 0.05, 0.03, 1.0),  # Dark brown
+            base_color=(0.22, 0.15, 0.08, 1.0),  # Dark brown
             metallic=0.0,
             roughness=0.9,  # Very rough
             normal_scale=1.0
@@ -62,7 +62,7 @@ class TerrainPBR:
         
         # Rocky terrain material  
         self.rocks = PBRMaterial(
-            base_color=(0.3, 0.3, 0.35, 1.0),  # Gray rock
+            base_color=(0.38, 0.38, 0.40, 1.0),  # Gray rock
             metallic=0.1,
             roughness=0.7,  # Moderately rough
             normal_scale=1.2
@@ -70,7 +70,7 @@ class TerrainPBR:
         
         # Wet mud material
         self.wet_mud = PBRMaterial(
-            base_color=(0.15, 0.08, 0.05, 1.0),  # Dark muddy brown
+            base_color=(0.15, 0.10, 0.08, 1.0),  # Dark muddy brown
             metallic=0.0,
             roughness=0.5,  # Smoother when wet
             normal_scale=0.8
@@ -78,7 +78,7 @@ class TerrainPBR:
         
         # Snow material
         self.snow = PBRMaterial(
-            base_color=(0.95, 0.98, 1.0, 1.0),  # Pure white
+            base_color=(0.98, 0.99, 1.0, 1.0),  # Pure white
             metallic=0.0,
             roughness=0.3,  # Smooth but not glossy
             normal_scale=0.5

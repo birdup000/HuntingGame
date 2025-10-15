@@ -24,6 +24,36 @@ def _hash_noise(x: int, y: int) -> float:
     return math.fmod(math.sin(x * 12.9898 + y * 78.233) * 43758.5453, 1.0)
 
 
+def _perlin_like_noise(x: float, y: float, frequency: float = 1.0) -> float:
+    """Generate smoother Perlin-like noise for natural variation."""
+    x *= frequency
+    y *= frequency
+    x0 = int(math.floor(x))
+    x1 = x0 + 1
+    y0 = int(math.floor(y))
+    y1 = y0 + 1
+    
+    # Interpolation weights
+    sx = x - x0
+    sy = y - y0
+    
+    # Smoothstep for better interpolation
+    sx = sx * sx * (3.0 - 2.0 * sx)
+    sy = sy * sy * (3.0 - 2.0 * sy)
+    
+    # Hash corners
+    n0 = _hash_noise(x0, y0)
+    n1 = _hash_noise(x1, y0)
+    n2 = _hash_noise(x0, y1)
+    n3 = _hash_noise(x1, y1)
+    
+    # Bilinear interpolation
+    nx0 = n0 * (1 - sx) + n1 * sx
+    nx1 = n2 * (1 - sx) + n3 * sx
+    
+    return nx0 * (1 - sy) + nx1 * sy
+
+
 def create_vertical_gradient_texture(size: int, top_color: Sequence[float], bottom_color: Sequence[float]) -> Texture:
     cache_key = f"vertical-gradient-{size}-{top_color}-{bottom_color}"
 
@@ -56,10 +86,10 @@ def create_terrain_texture(height_map: np.ndarray) -> Texture:
     scale = max(maximum - minimum, 1e-5)
 
     palette = [
-        (0.25, (0.18, 0.28, 0.12), (0.22, 0.34, 0.15)),
-        (0.45, (0.28, 0.2, 0.12), (0.34, 0.24, 0.15)),
-        (0.7, (0.32, 0.32, 0.35), (0.45, 0.45, 0.48)),
-        (1.01, (0.88, 0.9, 0.92), (0.97, 0.98, 1.0)),
+        (0.25, (0.12, 0.22, 0.08), (0.18, 0.30, 0.10)),  # Dark greens with more variation
+        (0.45, (0.22, 0.16, 0.08), (0.28, 0.20, 0.12)), # Darker dirt with brown tones
+        (0.7, (0.32, 0.32, 0.35), (0.42, 0.42, 0.45)),  # Gray rocks
+        (1.01, (0.82, 0.85, 0.90), (0.92, 0.95, 0.98)),    # White snow
     ]
 
     image = PNMImage(h, w, 4)
@@ -67,8 +97,8 @@ def create_terrain_texture(height_map: np.ndarray) -> Texture:
         for y in range(w):
             normalized = (heights[x, y] - minimum) / scale
             prev_threshold = 0.0
-            base_low = (0.12, 0.2, 0.08)
-            base_high = (0.14, 0.24, 0.09)
+            base_low = (0.10, 0.18, 0.06)
+            base_high = (0.12, 0.22, 0.08)
             for threshold, low_color, high_color in palette:
                 if normalized <= threshold:
                     span = threshold - prev_threshold
@@ -80,8 +110,18 @@ def create_terrain_texture(height_map: np.ndarray) -> Texture:
             else:
                 color = base_high
 
-            detail = _hash_noise(x, y)
-            color = tuple(max(0.0, min(1.0, c + (detail - 0.5) * 0.08)) for c in color)
+            # Add multi-scale noise for detail with smoother variation
+            # Use Perlin-like noise for large-scale variation
+            large_variation = (_perlin_like_noise(x / 10.0, y / 10.0, 0.5) - 0.5) * 0.12
+            
+            # Use hash noise for fine detail and texture
+            detail = (_hash_noise(x, y) - 0.5) * 0.08
+            fine_detail = (_hash_noise(x * 3, y * 3) - 0.5) * 0.05
+            micro_detail = (_hash_noise(x * 7, y * 7) - 0.5) * 0.03
+            
+            # Combine all scales for natural appearance
+            total_detail = large_variation + detail + fine_detail + micro_detail
+            color = tuple(max(0.0, min(1.0, c + total_detail)) for c in color)
             image.setXel(x, y, *color)
             image.setAlpha(x, y, 1.0)
 
@@ -214,6 +254,42 @@ def create_bark_texture(size: int = 64) -> Texture:
     return _cache_texture(cache_key, builder)
 
 
+def create_grass_texture(size: int = 128) -> Texture:
+    cache_key = f"grass-{size}"
+
+    def builder() -> Texture:
+        image = PNMImage(size, size, 4)
+        center = size / 2.0
+        radius = size * 0.45
+        for x in range(size):
+            for y in range(size):
+                dx = x - center
+                dy = y - center
+                dist = math.sqrt(dx * dx + dy * dy)
+                if dist > radius:
+                    image.setAlpha(x, y, 0.0)
+                    continue
+                t = dist / radius
+                base = (0.08, 0.32, 0.05)
+                edge = (0.12, 0.38, 0.08)
+                color = _lerp(base, edge, t)
+                noise = _hash_noise(x, y) - 0.5
+                color = tuple(max(0.0, min(1.0, c + noise * 0.06)) for c in color)
+                image.setXel(x, y, *color)
+                alpha = 0.7 + (1.0 - t) * 0.3  # Fade edges
+                image.setAlpha(x, y, alpha)
+
+        texture = Texture("grass-texture")
+        texture.load(image)
+        texture.setWrapU(Texture.WMMirror)
+        texture.setWrapV(Texture.WMMirror)
+        texture.setMagfilter(Texture.FTLinear)
+        texture.setMinfilter(Texture.FTLinearMipmapLinear)
+        return texture
+
+    return _cache_texture(cache_key, builder)
+
+
 def create_crosshair_texture(size: int = 192) -> Texture:
     cache_key = f"crosshair-{size}"
 
@@ -261,8 +337,8 @@ def create_sky_texture(size: int = 512) -> Texture:
     cache_key = f"sky-{size}"
 
     def builder() -> Texture:
-        top = (0.15, 0.28, 0.52)
-        horizon = (0.6, 0.65, 0.72)
+        top = (0.35, 0.55, 0.85)  # Sky blue
+        horizon = (0.65, 0.75, 0.85)  # Light horizon
         image = PNMImage(size, size, 4)
         sun_center = (size * 0.5, size * 0.3)
         sun_radius = size * 0.12
