@@ -88,58 +88,38 @@ class CollisionManager:
             collision_node.setFromCollideMask(self.PROJECTILE_MASK)
             collision_node.setIntoCollideMask(BitMask32.allOff())
 
-            # Attach to animal node
+            # Attach to animal node and set Python tag
             collision_np = animal.node.attachNewNode(collision_node)
+            collision_np.setPythonTag('animal', animal)
             self.traverser.addCollider(collision_np, self.handler)
 
             # Store reference
-            animal_id = f"animal_{id(animal)}"
-            self.animals[animal_id] = animal
             animal.collision_np = collision_np
-            animal.collision_id = animal_id
 
     def remove_animal(self, animal: 'Animal'):
         """Remove an animal from collision detection."""
-        if hasattr(animal, 'collision_id'):
-            animal_id = animal.collision_id
-            if animal_id in self.animals:
-                del self.animals[animal_id]
-
         if hasattr(animal, 'collision_np'):
             self.traverser.removeCollider(animal.collision_np)
             animal.collision_np.removeNode()
             delattr(animal, 'collision_np')
-            if hasattr(animal, 'collision_id'):
-                delattr(animal, 'collision_id')
 
     def add_projectile(self, projectile: 'Projectile'):
         """Add a projectile to collision detection."""
-        projectile_id = f"projectile_{id(projectile)}"
-        self.projectiles[projectile_id] = projectile
-
-        # Set up collision node
+        # Set up collision node and Python tag
         projectile.collision_node.setFromCollideMask(BitMask32.allOff())
         projectile.collision_node.setIntoCollideMask(self.PROJECTILE_MASK)
 
-        # Attach to render
+        # Attach to render and set Python tag
         projectile.collision_np = self.app.render.attachNewNode(projectile.collision_node)
-        projectile.collision_id = projectile_id
-
+        projectile.collision_np.setPythonTag('projectile', projectile)
         self.traverser.addCollider(projectile.collision_np, self.handler)
 
     def remove_projectile(self, projectile: 'Projectile'):
         """Remove a projectile from collision detection."""
-        if hasattr(projectile, 'collision_id'):
-            projectile_id = projectile.collision_id
-            if projectile_id in self.projectiles:
-                del self.projectiles[projectile_id]
-
         if hasattr(projectile, 'collision_np'):
             self.traverser.removeCollider(projectile.collision_np)
             projectile.collision_np.removeNode()
             delattr(projectile, 'collision_np')
-            if hasattr(projectile, 'collision_id'):
-                delattr(projectile, 'collision_id')
 
     def add_hit_callback(self, callback: Callable[['Projectile', 'Animal'], None]):
         """Add a callback for when projectile hits are detected."""
@@ -173,33 +153,26 @@ class CollisionManager:
             entry = self.handler.getEntry(i)
 
             # Get the colliding nodes
-            from_node = entry.getFromNodePath()
-            into_node = entry.getIntoNodePath()
+            from_node_path = entry.getFromNodePath()
+            into_node_path = entry.getIntoNodePath()
+
+            # Retrieve the Python objects from the tags
+            projectile = from_node_path.getPythonTag('projectile')
+            animal = into_node_path.getPythonTag('animal')
+
+            # Handle cases where from/into might be swapped
+            if not projectile or not animal:
+                projectile = into_node_path.getPythonTag('projectile')
+                animal = from_node_path.getPythonTag('animal')
 
             # Check if it's a projectile hitting an animal
-            projectile = self._get_projectile_from_node(from_node)
-            animal = self._get_animal_from_node(into_node)
+            if projectile and animal:
+                if projectile.active and not animal.is_dead():
+                    # Process the hit
+                    self._process_hit(projectile, animal)
 
-            if projectile and animal and projectile.active and not animal.is_dead():
-                # Process the hit
-                self._process_hit(projectile, animal)
-
-                # Mark projectile as inactive
-                projectile.active = False
-
-    def _get_projectile_from_node(self, node_path) -> Optional['Projectile']:
-        """Get projectile from collision node path."""
-        for projectile_id, projectile in self.projectiles.items():
-            if hasattr(projectile, 'collision_id') and projectile_id in node_path.getName():
-                return projectile
-        return None
-
-    def _get_animal_from_node(self, node_path) -> Optional['Animal']:
-        """Get animal from collision node path."""
-        for animal_id, animal in self.animals.items():
-            if hasattr(animal, 'collision_id') and animal_id in node_path.getName():
-                return animal
-        return None
+                    # Mark projectile as inactive
+                    projectile.active = False
 
     def _process_hit(self, projectile: 'Projectile', animal: 'Animal'):
         """Process a projectile hitting an animal."""
