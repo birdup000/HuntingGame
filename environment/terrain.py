@@ -37,6 +37,8 @@ class Terrain:
         Returns:
             2D numpy array representing height values
         """
+        import logging
+        logging.info(f"Generating terrain with width={self.width}, height={self.height}, scale={self.scale}, octaves={self.octaves}")
         self.height_map = np.zeros((self.width + 1, self.height + 1))
 
         for x in range(self.width + 1):
@@ -63,6 +65,7 @@ class Terrain:
                 value = value * center_weight  # Mountains in center, valleys at edges
                 self.height_map[x, y] = value * 15.0 + distance * 3.0  # More dramatic terrain
 
+        logging.info("Terrain generation completed")
         return self.height_map
 
     def get_height(self, x: float, y: float) -> float:

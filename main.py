@@ -6,6 +6,7 @@ Initializes the game engine and starts the main game loop.
 
 import logging
 from direct.showbase.ShowBase import ShowBase
+from panda3d.core import WindowProperties
 from core.game import Game
 try:
     from graphics.post_processing import PostProcessing, CinematicEffects
@@ -23,7 +24,12 @@ class MainApp(ShowBase):
         """Initialize the Panda3D application and game."""
         # Set window properties for better branding
         ShowBase.__init__(self)
-        
+
+        # Set window to foreground
+        props = WindowProperties()
+        props.setForeground(True)
+        self.win.requestProperties(props)
+
         # Ensure proper camera settings for visibility
         if hasattr(self, 'camLens'):
             self.camLens.setFar(2000)  # Increased far clip for better visibility

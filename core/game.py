@@ -372,6 +372,7 @@ class Game:
         """Spawn initial animals in the game world using config values."""
         animal_cfg = config.ANIMAL_CONFIG
         spawn_radius = animal_cfg['spawn_radius']
+        logging.info(f"Starting animal spawn with spawn_radius={spawn_radius}, deer_count={animal_cfg['deer_count']}, rabbit_count={animal_cfg['rabbit_count']}")
 
         deer_positions = []
         scenic_deer_spawns = [(22, 32), (-26, 20), (10, 38)]
@@ -380,12 +381,18 @@ class Game:
                 break
             deer_positions.append((sx, sy))
 
+        deer_spawn_attempts = 0
         while len(deer_positions) < animal_cfg['deer_count']:
+            deer_spawn_attempts += 1
+            if deer_spawn_attempts > 10000:  # Safety check for infinite loop
+                logging.error(f"Infinite loop detected in deer spawning after {deer_spawn_attempts} attempts. spawn_radius={spawn_radius}")
+                break
             x = random.uniform(-spawn_radius, spawn_radius)
             y = random.uniform(-spawn_radius, spawn_radius)
             if x ** 2 + y ** 2 < 36:  # keep deer away from immediate spawn radius
                 continue
             deer_positions.append((x, y))
+        logging.info(f"Deer spawning completed with {len(deer_positions)} positions after {deer_spawn_attempts} attempts")
 
         for x, y in deer_positions:
             z = self.terrain.get_height(x, y) if self.terrain else 0.0
@@ -402,12 +409,18 @@ class Game:
                 break
             rabbit_positions.append((sx, sy))
 
+        rabbit_spawn_attempts = 0
         while len(rabbit_positions) < animal_cfg['rabbit_count']:
+            rabbit_spawn_attempts += 1
+            if rabbit_spawn_attempts > 10000:  # Safety check for infinite loop
+                logging.error(f"Infinite loop detected in rabbit spawning after {rabbit_spawn_attempts} attempts. spawn_radius={spawn_radius}")
+                break
             x = random.uniform(-spawn_radius, spawn_radius)
             y = random.uniform(-spawn_radius, spawn_radius)
             if x ** 2 + y ** 2 < 9:
                 continue
             rabbit_positions.append((x, y))
+        logging.info(f"Rabbit spawning completed with {len(rabbit_positions)} positions after {rabbit_spawn_attempts} attempts")
 
         for x, y in rabbit_positions:
             z = self.terrain.get_height(x, y) if self.terrain else 0.0
@@ -515,8 +528,11 @@ class Game:
             self.decor_manager = None
 
         try:
+            logging.info("Loading rock model: models/misc/sphere")
             base_model = self.app.loader.loadModel('models/misc/sphere')
-        except Exception:
+            logging.info("Rock model loaded successfully")
+        except Exception as e:
+            logging.error(f"Failed to load rock model 'models/misc/sphere': {e}")
             base_model = None
 
         for pos in rock_positions:

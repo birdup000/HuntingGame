@@ -152,6 +152,8 @@ class PostProcessing:
         
     def _setup_render_pipeline(self):
         """Set up enhanced rendering pipeline."""
+        import logging
+        logging.info("Setting up post-processing render pipeline")
         # Create offscreen buffer with color and depth
         fbprops = FrameBufferProperties()
         fbprops.set_rgb_color(True)
@@ -172,6 +174,7 @@ class PostProcessing:
         self.post_quad = self.base.render2d.attach_new_node(cm.generate())
         self.post_quad.set_texture(self.scene_tex)
         self.is_setup = True
+        logging.info("Post-processing render pipeline setup completed")
         
     def _update_bloom(self, task):
         """Update bloom effect."""
