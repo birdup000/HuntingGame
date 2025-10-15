@@ -5,6 +5,7 @@ Handles the main game loop and initialization.
 
 from direct.showbase.ShowBase import ShowBase
 from direct.task import Task
+from panda3d.core import CollisionTraverser, CollisionHandlerQueue
 from player.player import Player
 from environment.pbr_terrain import PBRTerrain, OptimizedTerrainRenderer
 from environment.decor import DecorManager
@@ -128,14 +129,29 @@ class Game:
             self.decor_manager.terrain = self.terrain
         self.decor_manager.populate()
         
+        # Set up collision detection before animals are created
+        self.setup_collision_detection()
+
         # Spawn animals using config values
         self.spawn_animals()
 
-        # Set up collision detection after animals are created
-        self.setup_collision_detection()
-
         if not self.sky:
             self.sky = SkyDome(self.app)
+
+    def setup_collision_detection(self):
+        """Set up collision detection for animals and projectiles."""
+        # Always set up basic collision traverser for projectiles and animal detection
+        if hasattr(self.app, 'taskMgr') and hasattr(self.app, 'render'):
+            # Create a general collision traverser
+            self.collision_traverser = CollisionTraverser()
+            self.collision_handler = CollisionHandlerQueue()
+            
+            # Add to task manager
+            self.app.taskMgr.add(
+                lambda task: self.collision_traverser.traverse(self.app.render),
+                'gameCollisionTraverser',
+                sort=40
+            )
 
     def setup_ui(self):
         """Initialize the UI system."""

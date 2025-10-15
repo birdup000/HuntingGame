@@ -28,15 +28,20 @@ class MainApp(ShowBase):
         self.graphics_manager = create_optimized_graphics(self)
         self.setup_post_processing()
         
-        # ENSURE clean 2D rendering to prevent UI distortion
+        # PROPER render-to-2D separation to prevent UI artifacts
         self.setFrameRateMeter(False)  # Hide FPS in final build
         self.render2d.setDepthTest(False)  # Prevent 3D interaction with 2D
         self.render2d.setDepthWrite(False)  # Ensure 2D elements don't write to depth buffer
         
-        # Set up proper render-to-2D separation
+        # Set up proper render-to-2D separation with explicit sorting
         if hasattr(self, 'render'):
             self.render.setDepthTest(True)  # Enable depth test for 3D
             self.render.setDepthWrite(True)  # Enable depth writing for 3D
+            self.render.setBin('default', 0)  # Ensure 3D renders first
+            
+        # Set up render2d with proper bin sorting for UI
+        self.render2d.setBin('fixed', 60)  # UI renders last
+        self.aspect2d.setBin('fixed', 60)  # Aspect2d for overlays
             
         # Additional cleanup - ensure no stray debug visualization
         self.disableAllAudio()  # Prevent debug sounds

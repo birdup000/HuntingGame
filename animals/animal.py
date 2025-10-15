@@ -277,6 +277,7 @@ class Animal(ABC):
 
         # Store player position for fleeing behavior
         self._last_player_position = player_position
+        self._last_terrain_height = terrain_height
 
         # Check for player detection
         if self.detect_player(player_position):
@@ -291,8 +292,10 @@ class Animal(ABC):
 
         # Update node position if rendered
         if self.node:
-            # Keep animal above terrain
-            display_pos = Vec3(self.position.x, self.position.y, self.position.z + self.height_offset)
+            # Always ensure animal is properly positioned above terrain
+            current_terrain_height = getattr(self, '_last_terrain_height', terrain_height)
+            self.position.setZ(current_terrain_height + self.height_offset)
+                
             self.node.setPos(self.position)
             self._distance_since_track += self.velocity.length() * dt
             if self._distance_since_track >= self.track_spacing:
