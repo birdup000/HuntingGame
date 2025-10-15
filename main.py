@@ -44,8 +44,9 @@ class MainApp(ShowBase):
         
         # PROPER render-to-2D separation to prevent UI artifacts
         self.setFrameRateMeter(False)  # Hide FPS in final build
-        self.render2d.setDepthTest(False)  # Prevent 3D interaction with 2D
-        self.render2d.setDepthWrite(False)  # Ensure 2D elements don't write to depth buffer
+        # Use aspect2d for UI elements which has proper default depth settings
+        # Don't explicitly set depth test/write on render2d to avoid conflicts
+        # aspect2d already has proper settings for 2D UI rendering
         
         # Set up proper render-to-2D separation with explicit sorting
         # Create a proper render bin for 3D scene first
@@ -53,9 +54,9 @@ class MainApp(ShowBase):
             self.render.setDepthTest(True)  # Enable depth test for 3D
             self.render.setDepthWrite(True)  # Enable depth writing for 3D
             
-        # Set up render2d with proper bin sorting for UI
-        self.render2d.setBin('fixed', 60)  # UI renders last
-        self.aspect2d.setBin('fixed', 60)  # Aspect2d for overlays
+        # Set up render2d with proper bin sorting for UI - make render2d render BEFORE aspect2d
+        self.render2d.setBin('fixed', 59)  # UI renders first (lower priority number = renders first)
+        self.aspect2d.setBin('fixed', 60)  # Aspect2d for overlays renders last
             
         # Additional cleanup - ensure no stray debug visualization
         self.disableAllAudio()  # Prevent debug sounds
@@ -93,7 +94,13 @@ class MainApp(ShowBase):
 def main():
     """Main function to run the application."""
     app = MainApp()
-    app.run()
+    try:
+        app.run()
+    except Exception as e:
+        # Log any errors that occur during runtime
+        import logging
+        logging.error(f"Game crashed with error: {e}")
+        raise
 
 if __name__ == "__main__":
     main()
