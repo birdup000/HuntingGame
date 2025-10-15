@@ -3,8 +3,14 @@ Enhanced terrain system with PBR materials, dynamic texturing, and optimized ren
 Supports photorealistic terrain with multiple material zones and weather effects.
 """
 
+import logging
 import numpy as np
-from opensimplex import OpenSimplex
+try:
+    from opensimplex import OpenSimplex
+    opensimplex_available = True
+except ImportError:
+    OpenSimplex = None
+    opensimplex_available = False
 from panda3d.core import (
     Geom, GeomNode, GeomVertexData, GeomVertexFormat, GeomVertexWriter,
     GeomTriangles, Vec3, Vec4, NodePath, TextureStage, Material
@@ -22,15 +28,17 @@ class PBRTerrain:
         self.height = height
         self.scale = scale
         self.octaves = octaves
-        self.noise = OpenSimplex(seed=42)
+        self.noise = OpenSimplex(seed=42) if OpenSimplex else None
+        if not opensimplex_available:
+            logging.warning("OpenSimplex not available, using alternative noise generation")
         self.height_map = None
         self.terrain_node = None
         self.terrain_texture = None
-        
+
         # PBR terrain materials
         self.terrain_pbr = TerrainPBR()
         self.environment_mats = EnvironmentMaterials()
-        
+
         # Material blending zones
         self.material_zones = {}
         
@@ -48,8 +56,12 @@ class PBRTerrain:
                 for _ in range(self.octaves):
                     nx = (x / self.width - 0.5) * frequency
                     ny = (y / self.height - 0.5) * frequency
-                    
-                    height += self.noise.noise2(nx, ny) * amplitude
+
+                    if self.noise:
+                        height += self.noise.noise2(nx, ny) * amplitude
+                    else:
+                        # Alternative: use a simple sine wave
+                        height += math.sin(nx * 10 + ny * 10) * amplitude
                     amplitude *= 0.5
                     frequency *= 2
                 
@@ -129,12 +141,9 @@ class PBRTerrain:
                 vertex.addData3f(pos.x, pos.y, pos.z)
                 normal.addData3f(normal_vec.x, normal_vec.y, normal_vec.z)
                 
-                # Base color based on zone with height-based variation
+                # Base color based on zone
                 base_color = self._get_zone_color(zone, h)
-                # Add subtle height-based brightness variation
-                height_factor = 1.0 + (h / max(abs(self.height_map.max()), 1)) * 0.15
-                varied_color = tuple(min(1.0, c * height_factor) for c in base_color)
-                color.addData4f(*varied_color)
+                color.addData4f(*base_color)
                 
                 # UV coordinates with improved tiling for more texture detail
                 # Use smaller scale for more repetition and detail
@@ -217,7 +226,7 @@ class PBRTerrain:
     def _get_zone_color(self, zone, height):
         """Get base color for material zone."""
         colors = {
-            'snow': (0.90, 0.92, 0.95, 1.0),      # White snow
+            'snow': (0.7, 0.75, 0.8, 1.0),      # White snow
             'rock': (0.45, 0.45, 0.42, 1.0),     # Gray rock
             'wet': (0.15, 0.22, 0.35, 1.0),     # Dark blue-gray wet areas
             'forest': (0.12, 0.32, 0.08, 1.0)    # Dark green for forest

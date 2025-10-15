@@ -3,10 +3,10 @@ Player module for the 3D Hunting Simulator.
 Handles player character, controls, and inventory.
 """
 
-from panda3d.core import Vec3, Point3, CollisionNode, CollisionSphere, CollisionTraverser, CollisionHandlerQueue, CollisionRay, BitMask32
+import logging
+from panda3d.core import Vec3, Point3, CollisionNode, CollisionSphere, CollisionTraverser, CollisionHandlerQueue
 from direct.task import Task
 from typing import List, Optional
-import math
 from physics.collision import CollisionManager, Projectile
 
 
@@ -90,7 +90,7 @@ class Player:
             # Add slight upward tilt for better view
             self.camera_node.setP(5)  # Tilt up 5 degrees
         else:
-            print("Warning: Camera not available - running in headless mode")
+            logging.warning("Camera not available - running in headless mode")
 
         # Player model (simple sphere for now)
         self.model = None
@@ -101,9 +101,9 @@ class Player:
                 self.model.setPos(self.position)
                 self.model.setScale(0.5)
             except Exception as e:
-                print(f"Warning: Could not load player model: {e}")
+                logging.warning(f"Could not load player model: {e}")
         else:
-            print("Warning: Loader or render not available - running in headless mode")
+            logging.warning("Loader or render not available - running in headless mode")
 
         # Collision setup (always needed for projectiles)
         self.collision_manager = CollisionManager(app)
@@ -124,7 +124,7 @@ class Player:
                 self.collision_handler = CollisionHandlerQueue()
                 self.collision_traverser.addCollider(self.collision_np, self.collision_handler)
             else:
-                print("Warning: Collision system not available - model not loaded")
+                logging.warning("Collision system not available - model not loaded")
 
         # Weapon and shooting setup (always available)
         self.weapon = Weapon("Hunting Rifle", fire_rate=0.5, damage=25.0, projectile_speed=150.0, max_ammo=10)
@@ -138,7 +138,7 @@ class Player:
         """Set up keyboard and mouse controls."""
         # Check if we have the necessary components for input
         if not hasattr(self.app, 'accept') or not hasattr(self.app, 'taskMgr'):
-            print("Warning: Input system not available - running in headless mode")
+            logging.warning("Input system not available - running in headless mode")
             self.movement = {
                 'forward': False,
                 'backward': False,
@@ -336,12 +336,12 @@ class Player:
         """Handle projectile hitting an animal."""
         # This method is called when a projectile hits an animal
         # Additional effects like sound, particles, etc. can be added here
-        print(f"Hit {animal.species} with {projectile.damage} damage!")
+        logging.debug(f"Hit {animal.species} with {projectile.damage} damage!")
 
     def take_damage(self, damage: float):
         """Reduce player health by the given amount."""
         self.health = max(0, self.health - damage)
-        print(f"Player took {damage} damage. Health: {self.health}")
+        logging.debug(f"Player took {damage} damage. Health: {self.health}")
 
         # Check for death
         if self.health <= 0:
@@ -350,11 +350,11 @@ class Player:
     def heal(self, amount: float):
         """Increase player health by the given amount."""
         self.health = min(self.max_health, self.health + amount)
-        print(f"Player healed {amount}. Health: {self.health}")
+        logging.debug(f"Player healed {amount}. Health: {self.health}")
 
     def die(self):
         """Handle player death."""
-        print("Player died!")
+        logging.info("Player died!")
         # Additional death handling can be added here
         # The game over logic is handled in the Game class
 
@@ -369,25 +369,13 @@ class Player:
             self.collision_manager.remove_animal(animal)
 
     def get_terrain_height(self, x: float, y: float) -> float:
-        """Get terrain height at given coordinates using ray casting."""
+        """Get terrain height at given coordinates."""
         try:
-            # Try to get height from terrain if available
-            if hasattr(self.app, 'game') and hasattr(self.app.game, 'terrain'):
+            if hasattr(self.app, 'game') and self.app.game and hasattr(self.app.game, 'terrain') and self.app.game.terrain:
                 return self.app.game.terrain.get_height(x, y)
-            
-            # Fallback: check if there are terrain height functions available
-            import sys
-            if 'environment.terrain' in sys.modules:
-                # Try direct terrain access
-                for obj in sys.modules['environment.terrain'].__dict__.values():
-                    if hasattr(obj, 'get_height'):
-                        return obj.get_height(x, y)
-            
-            # Default fallback
-            return 1.0
-        except (AttributeError, Exception):
-            # Simple fallback
-            return 1.0
+        except (AttributeError, TypeError, Exception):
+            pass
+        return 1.0
 
     def cleanup(self):
         """Clean up player resources."""

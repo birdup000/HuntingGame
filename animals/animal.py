@@ -5,7 +5,7 @@ Handles animal AI, behavior, and basic 3D models.
 
 from abc import ABC, abstractmethod
 from enum import Enum
-from typing import Optional, Tuple, Union
+from typing import Optional, Union
 from panda3d.core import (
     CardMaker,
     Geom,
@@ -14,7 +14,6 @@ from panda3d.core import (
     GeomVertexData,
     GeomVertexFormat,
     GeomVertexWriter,
-    LVecBase3f,
     NodePath,
     TransparencyAttrib,
     Vec3,
@@ -106,10 +105,6 @@ class Animal(ABC):
             (-body_length/2, body_width/2, body_height/2),    # 7
         ]
 
-        # Face normals for body
-        normals = [
-            (0, 0, -1), (0, 0, 1), (0, -1, 0), (0, 1, 0), (-1, 0, 0), (1, 0, 0),  # Main faces
-        ]
 
         # Add vertices with realistic colors
         for i, v in enumerate(vertices):
@@ -238,8 +233,8 @@ class Animal(ABC):
         else:
             raise TypeError("create_model must return a GeomNode or NodePath")
         self.render_node = parent_node
-        # Remove height offset - position animals directly on terrain
-        self. node.setPos(self.position)
+        # Apply height offset to position animals above terrain
+        self.node.setPos(self.position.x, self.position.y, self.position.z + self.height_offset)
 
         return self.node
 
@@ -293,8 +288,7 @@ class Animal(ABC):
         # Update node position if rendered
         if self.node:
             # Always ensure animal is properly positioned above terrain
-            current_terrain_height = getattr(self, '_last_terrain_height', terrain_height)
-            self.position.setZ(current_terrain_height + self.height_offset)
+            self.position.setZ(terrain_height + self.height_offset)
                 
             self.node.setPos(self.position)
             self._distance_since_track += self.velocity.length() * dt
@@ -372,7 +366,6 @@ class Animal(ABC):
             self.speed = 5.0  # Normal speed
 
         # Update position
-        old_position = Vec3(self.position)  # Store old position
         self.position += self.velocity * dt
         
         # Apply gravity/terrain alignment - ensure animals stay on terrain

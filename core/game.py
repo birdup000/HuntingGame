@@ -3,15 +3,15 @@ Core game module for the 3D Hunting Simulator.
 Handles the main game loop and initialization.
 """
 
+import logging
 from direct.showbase.ShowBase import ShowBase
-from direct.task import Task
 from panda3d.core import CollisionTraverser, CollisionHandlerQueue
 from player.player import Player
 from environment.pbr_terrain import PBRTerrain, OptimizedTerrainRenderer
 from environment.decor import DecorManager
 from environment.sky import SkyDome
 from animals.animal import Deer, Rabbit
-from ui.menus import UIManager, SettingsMenu
+from ui.menus import UIManager
 from panda3d.core import Vec3, CardMaker, TransparencyAttrib
 import random
 import config
@@ -19,10 +19,19 @@ import config
 from typing import Dict, Optional
 
 # Import advanced graphics systems
-from graphics.materials import TerrainPBR, EnvironmentMaterials
-from graphics.lighting import DynamicLighting
-from graphics.weather import WeatherSystem
-from graphics.foliage import FoliageRenderer, GrassField
+try:
+    from graphics.materials import TerrainPBR, EnvironmentMaterials
+    from graphics.lighting import DynamicLighting
+    from graphics.weather import WeatherSystem
+    from graphics.foliage import FoliageRenderer, GrassField
+except ImportError:
+    # Handle cases where graphics modules are incomplete
+    TerrainPBR = None
+    EnvironmentMaterials = None
+    DynamicLighting = None
+    WeatherSystem = None
+    FoliageRenderer = None
+    GrassField = None
 
 class Game:
     """Main game class that manages the game state and loop."""
@@ -46,17 +55,32 @@ class Game:
         self._objective_initialized = False
         
         # Initialize advanced graphics systems
-        self.terrain_pbr = TerrainPBR()
-        self.env_materials = EnvironmentMaterials()
-        self.dynamic_lighting = DynamicLighting(self.app.render)
-        self.weather_system = WeatherSystem(self.app.render)
-        self.foliage_renderer = FoliageRenderer(self.app.render)
+        if TerrainPBR is not None:
+            self.terrain_pbr = TerrainPBR()
+        else:
+            self.terrain_pbr = None
+        if EnvironmentMaterials is not None:
+            self.env_materials = EnvironmentMaterials()
+        else:
+            self.env_materials = None
+        if DynamicLighting is not None:
+            self.dynamic_lighting = DynamicLighting(self.app.render)
+        else:
+            self.dynamic_lighting = None
+        if WeatherSystem is not None:
+            self.weather_system = WeatherSystem(self.app.render)
+        else:
+            self.weather_system = None
+        if FoliageRenderer is not None:
+            self.foliage_renderer = FoliageRenderer(self.app.render)
+        else:
+            self.foliage_renderer = None
         self.decor_manager = None
 
     def start(self):
         """Start the game loop."""
         self.is_running = True
-        print("Hunting Simulator Game Started")
+        logging.info("Hunting Simulator Game Started")
 
         # Initialize game components
         self.initialize_components()
@@ -91,13 +115,19 @@ class Game:
     def setup_environment(self):
         """Set up environment with procedural terrain and advanced graphics."""
         # Set up advanced lighting system
-        self.dynamic_lighting.setup_advanced_lighting()
-        
+        if self.dynamic_lighting:
+            self.dynamic_lighting.setup_advanced_lighting()
+        else:
+            logging.warning("Dynamic lighting not available")
+
         # Set up weather system
-        import random
-        weather_types = ['clear', 'partly_cloudy', 'overcast']  # Starting weather options
-        initial_weather = random.choice(weather_types)
-        self.weather_system.set_weather(initial_weather, random.uniform(0.1, 0.6))
+        if self.weather_system:
+            import random
+            weather_types = ['clear', 'partly_cloudy', 'overcast']  # Starting weather options
+            initial_weather = random.choice(weather_types)
+            self.weather_system.set_weather(initial_weather, random.uniform(0.1, 0.6))
+        else:
+            logging.warning("Weather system not available")
         
         # Create procedural terrain using config values with PBR
         terrain_cfg = config.TERRAIN_CONFIG
@@ -128,30 +158,16 @@ class Game:
             self.decor_manager.cleanup()
             self.decor_manager.terrain = self.terrain
         self.decor_manager.populate()
-        
-        # Set up collision detection before animals are created
-        self.setup_collision_detection()
 
         # Spawn animals using config values
         self.spawn_animals()
 
+        # Set up collision detection after animals are spawned
+        self.setup_collision_detection()
+
         if not self.sky:
             self.sky = SkyDome(self.app)
 
-    def setup_collision_detection(self):
-        """Set up collision detection for animals and projectiles."""
-        # Always set up basic collision traverser for projectiles and animal detection
-        if hasattr(self.app, 'taskMgr') and hasattr(self.app, 'render'):
-            # Create a general collision traverser
-            self.collision_traverser = CollisionTraverser()
-            self.collision_handler = CollisionHandlerQueue()
-            
-            # Add to task manager
-            self.app.taskMgr.add(
-                lambda task: self.collision_traverser.traverse(self.app.render),
-                'gameCollisionTraverser',
-                sort=40
-            )
 
     def setup_ui(self):
         """Initialize the UI system."""
@@ -187,7 +203,9 @@ class Game:
         """Set up input controls for UI interactions."""
         # Escape key for pause menu
         self.app.accept('escape', self.handle_escape)
-        
+        # F5 key for toggling debug lights
+        self.app.accept('f5', self.toggle_debug_lights)
+
         # Ensure mouse is visible for UI interaction
         if hasattr(self.app, 'enableMouse'):
             self.app.enableMouse()
@@ -199,6 +217,13 @@ class Game:
         elif self.game_state == 'paused':
             self.resume_game()
 
+    def toggle_debug_lights(self):
+        """Toggle debug light visualizations."""
+        if self.dynamic_lighting:
+            self.dynamic_lighting.toggle_debug_lights()
+        else:
+            logging.warning("Dynamic lighting not available, cannot toggle debug lights")
+
     def start_gameplay(self):
         """Start the actual gameplay."""
         self.game_state = 'playing'
@@ -209,7 +234,7 @@ class Game:
             # Use Panda3D's proper method to hide cursor
             try:
                 self.app.openPointer(0)  # Hide cursor
-            except:
+            except Exception:
                 pass
         elif hasattr(self.app, 'win') and hasattr(self.app.win, 'requestProperties'):
             # Alternative method to hide cursor
@@ -217,7 +242,7 @@ class Game:
                 props = self.app.win.get_properties()
                 props.set_cursor_hidden(True)
                 self.app.win.request_properties(props)
-            except:
+            except Exception:
                 pass
         
         # Initialize mouse watcher if needed
@@ -236,8 +261,8 @@ class Game:
             self.ui_manager.setup_hud(self.player)
             self.ui_manager.toggle_hud_visibility(True)
             self._sync_hud_objectives(force=True)
-
-        print("Gameplay started")
+    
+            logging.info("Gameplay started")
 
     def pause_game(self):
         """Pause the game and show pause menu."""
@@ -247,14 +272,14 @@ class Game:
         if hasattr(self.app, 'openPointer'):
             try:
                 self.app.openPointer(1)  # Show cursor
-            except:
+            except Exception:
                 pass
         elif hasattr(self.app, 'win') and hasattr(self.app.win, 'requestProperties'):
             try:
                 props = self.app.win.get_properties()
                 props.set_cursor_hidden(False)
                 self.app.win.request_properties(props)
-            except:
+            except Exception:
                 pass
         
         # Enable mouse for menu interaction
@@ -272,14 +297,14 @@ class Game:
         if hasattr(self.app, 'openPointer'):
             try:
                 self.app.openPointer(0)  # Hide cursor
-            except:
+            except Exception:
                 pass
         elif hasattr(self.app, 'win') and hasattr(self.app.win, 'requestProperties'):
             try:
                 props = self.app.win.get_properties()
                 props.set_cursor_hidden(True)
                 self.app.win.request_properties(props)
-            except:
+            except Exception:
                 pass
         
         # Enable mouse look
@@ -306,7 +331,7 @@ class Game:
         if hasattr(self.app, 'openPointer'):
             try:
                 self.app.openPointer(1)  # Show cursor
-            except:
+            except Exception:
                 pass
         elif hasattr(self.app, 'win') and hasattr(self.app.win, 'requestProperties'):
             try:
@@ -424,59 +449,43 @@ class Game:
         # This method kept for backward compatibility
         pass
 
-    def _apply_terrain_materials(self):
-        """Apply PBR materials to terrain based on height and conditions."""
-        if not self.terrain or not self.terrain.terrain_node:
-            return
-            
-        # Sample terrain heights to determine material zones
-        terrain_size = config.TERRAIN_CONFIG['width']
-        
-        # Apply different materials to terrain patches based on height
-        for x in range(-terrain_size//4, terrain_size//4, 10):
-            for y in range(-terrain_size//4, terrain_size//4, 10):
-                height = self.terrain.get_height(x, y)
-                material = self.terrain_pbr.get_material_for_height(height)
-                
-                # Create material region
-                region_node = self.terrain.terrain_node.find(f"**/terrain_patch_{x}_{y}")
-                if not region_node.isEmpty():
-                    material.apply_to(region_node)
-                else:
-                    # Apply to all terrain children
-                    material.apply_to(self.terrain.terrain_node)
-        
-        print("PBR materials applied to terrain")
 
     def _setup_grass_fields(self):
         """Create and position grass fields for enhanced realism."""
-        terrain_cfg = config.TERRAIN_CONFIG
-        
         # Create multiple grass fields across the terrain
         field_configs = [
             {'width': 60, 'height': 40, 'density': 800},   # Larger fields
             {'width': 45, 'height': 30, 'density': 600},   # More dense
             {'width': 50, 'height': 30, 'density': 700}    # More coverage
         ]
-        
-        for i, cfg in enumerate(field_configs):
-            field = GrassField(
-                width=cfg['width'],
-                height=cfg['height'], 
-                density=cfg['density'],
-                render_node=self.app.render
-            )
-            
-            # Position fields around the map
-            positions = [(30, 30), (-30, 20), (0, -25)]
-            if i < len(positions):
-                self.foliage_renderer.add_grass_field(field)
-                if getattr(field, 'grass_node', None):
-                    field.grass_node.setPos(positions[i][0], positions[i][1], 0)
-        
-        print(f"Created {len(field_configs)} grass fields with {sum(c['density'] for c in field_configs)} grass blades")
+
+        if GrassField is not None:
+            for i, cfg in enumerate(field_configs):
+                field = GrassField(
+                    width=cfg['width'],
+                    height=cfg['height'],
+                    density=cfg['density'],
+                    render_node=self.app.render
+                )
+
+                # Position fields around the map
+                positions = [(30, 30), (-30, 20), (0, -25)]
+                if i < len(positions):
+                    if self.foliage_renderer:
+                        self.foliage_renderer.add_grass_field(field)
+                        if getattr(field, 'grass_node', None):
+                            field.grass_node.setPos(positions[i][0], positions[i][1], 0)
+                    else:
+                        logging.warning("Foliage renderer not available, skipping grass field addition")
+
+            logging.info(f"Created {len(field_configs)} grass fields with {sum(c['density'] for c in field_configs)} grass blades")
+        else:
+            logging.warning("GrassField not available, skipping grass fields")
 
     def _setup_tree_clusters(self):
+        if not self.foliage_renderer:
+            logging.warning("Foliage renderer not available, skipping tree clusters")
+            return
         positions = [
             (Vec3(25, 32, 0), 8, 12),
             (Vec3(-28, 18, 0), 6, 10),
@@ -544,7 +553,10 @@ class Game:
         if self.game_state == 'playing':
             # Update advanced graphics systems
             self._update_graphics_systems(dt)
-            self.foliage_renderer.update(dt, self.game_time)
+            if self.foliage_renderer:
+                self.foliage_renderer.update(dt, self.game_time)
+            else:
+                logging.warning("Foliage renderer not available, skipping update")
             
             # Update game components
             if self.player:
@@ -586,28 +598,32 @@ class Game:
         
     def _update_graphics_systems(self, dt):
         """Update advanced graphics systems for photorealistic rendering."""
-        if not hasattr(self, 'game_time'):
-            self.game_time = 0.0
-            
         self.game_time += dt
-        
+
         # Update dynamic lighting
-        # Simulate time progression (1 minute = 1 real second)
-        virtual_hour = (self.game_time * 0.016) % 24
-        self.dynamic_lighting.update_time_of_day(virtual_hour)
-        
+        if self.dynamic_lighting:
+            # Simulate time progression (1 minute = 1 real second)
+            virtual_hour = (self.game_time * 0.016) % 24
+            self.dynamic_lighting.update_time_of_day(virtual_hour)
+        else:
+            logging.warning("Dynamic lighting not available")
+
         # Update weather system
-        self.weather_system.update_weather(dt)
-        
+        if self.weather_system:
+            self.weather_system.update_weather(dt)
+        else:
+            logging.warning("Weather system not available")
+
         # Adjust lighting for current weather
-        # Get weather intensities safely
-        precipitation = getattr(self.weather_system, 'precipitation', None)
-        rain_intensity = precipitation.intensity if precipitation else 0
-        
-        fog_effect = getattr(self.weather_system, 'fog_effect', None)
-        fog_density = fog_effect.density if fog_effect else 0
-        # Already handled above
-        self.dynamic_lighting.adjust_for_weather(rain_intensity, fog_density)
+        if self.dynamic_lighting and self.weather_system:
+            # Get weather intensities safely
+            precipitation = getattr(self.weather_system, 'precipitation', None)
+            rain_intensity = precipitation.intensity if precipitation else 0
+
+            fog_effect = getattr(self.weather_system, 'fog_effect', None)
+            fog_density = fog_effect.density if fog_effect else 0
+            # Already handled above
+            self.dynamic_lighting.adjust_for_weather(rain_intensity, fog_density)
 
     def stop(self):
         """Stop the game loop."""
@@ -640,7 +656,7 @@ class Game:
         if self.ui_manager:
             self.ui_manager.cleanup()
 
-        print("Hunting Simulator Game Stopped")
+        logging.info("Hunting Simulator Game Stopped")
 
     def handle_animal_killed(self, animal):
         """Handle when an animal is killed - update score and statistics."""

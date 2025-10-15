@@ -4,15 +4,14 @@ Handles main menu, pause menu, game over screen, and other UI menus.
 """
 
 from direct.gui.DirectGui import (
-    DirectFrame, DirectButton, DirectLabel, DirectEntry, DirectSlider,
-    DirectCheckButton, DirectOptionMenu
+    DirectFrame, DirectButton, DirectSlider,
+    DirectCheckButton
 )
 from direct.gui.OnscreenText import OnscreenText
 from direct.gui.OnscreenImage import OnscreenImage
 import os
-from panda3d.core import TextNode, Vec4, Vec3, Point3, TransparencyAttrib, Texture, PNMImage, Filename
+from panda3d.core import TextNode, TransparencyAttrib, Texture, PNMImage, Filename
 from typing import Callable, Optional, Dict, Any, Tuple
-import sys
 
 
 class BaseMenu:

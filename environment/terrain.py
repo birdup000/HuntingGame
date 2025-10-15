@@ -5,8 +5,8 @@ Uses OpenSimplex noise for realistic landscape generation.
 
 import numpy as np
 from opensimplex import OpenSimplex
-from panda3d.core import Geom, GeomNode, GeomVertexData, GeomVertexFormat, GeomVertexWriter, GeomTriangles, Vec3, Vec4, NodePath
-from typing import Tuple, Optional
+from panda3d.core import Geom, GeomNode, GeomVertexData, GeomVertexFormat, GeomVertexWriter, GeomTriangles, NodePath
+from typing import Optional
 
 
 class Terrain:
@@ -67,7 +67,7 @@ class Terrain:
 
     def get_height(self, x: float, y: float) -> float:
         """
-        Get interpolated height at given coordinates.
+        Get interpolated height at given coordinates using bilinear interpolation.
 
         Args:
             x: X coordinate
@@ -80,14 +80,31 @@ class Terrain:
             return 0.0
 
         # Convert world coordinates to height map indices
-        map_x = int((x + self.width / 2) / self.scale)
-        map_y = int((y + self.height / 2) / self.scale)
+        fx = (x + self.width / 2) / self.scale
+        fy = (y + self.height / 2) / self.scale
 
         # Clamp to bounds
-        map_x = max(0, min(self.width, map_x))
-        map_y = max(0, min(self.height, map_y))
+        fx = max(0, min(self.width, fx))
+        fy = max(0, min(self.height, fy))
 
-        return float(self.height_map[map_x, map_y])
+        # Get integer indices
+        x1 = int(fx)
+        y1 = int(fy)
+        x2 = min(x1 + 1, self.width)
+        y2 = min(y1 + 1, self.height)
+
+        # Get heights at corners
+        h11 = self.height_map[x1, y1]
+        h12 = self.height_map[x1, y2]
+        h21 = self.height_map[x2, y1]
+        h22 = self.height_map[x2, y2]
+
+        # Bilinear interpolation
+        dx = fx - x1
+        dy = fy - y1
+        height = (1 - dx) * (1 - dy) * h11 + dx * (1 - dy) * h21 + (1 - dx) * dy * h12 + dx * dy * h22
+
+        return float(height)
 
     def create_terrain_mesh(self) -> GeomNode:
         """
@@ -119,28 +136,39 @@ class Terrain:
 
                 vertex.addData3f(world_x, world_y, world_z)
 
-                # Calculate normal (simplified)
+                # Calculate normal with proper bounds checking
                 normal_x = 0.0
                 normal_y = 0.0
                 normal_z = 1.0
 
-                # Simple normal calculation using neighboring heights
-                if x > 0 and x < self.width and y > 0 and y < self.height:
-                    h_left = self.height_map[x - 1, y]
-                    h_right = self.height_map[x + 1, y]
-                    h_down = self.height_map[x, y - 1]
-                    h_up = self.height_map[x, y + 1]
+                # Calculate dh/dx
+                if x == 0:
+                    # Forward difference
+                    normal_x = (self.height_map[x, y] - self.height_map[x + 1, y]) / self.scale
+                elif x == self.width:
+                    # Backward difference
+                    normal_x = (self.height_map[x - 1, y] - self.height_map[x, y]) / self.scale
+                else:
+                    # Central difference
+                    normal_x = (self.height_map[x - 1, y] - self.height_map[x + 1, y]) / (2 * self.scale)
 
-                    normal_x = (h_left - h_right) / (2 * self.scale)
-                    normal_y = (h_down - h_up) / (2 * self.scale)
-                    normal_z = 1.0
+                # Calculate dh/dy
+                if y == 0:
+                    # Forward difference
+                    normal_y = (self.height_map[x, y] - self.height_map[x, y + 1]) / self.scale
+                elif y == self.height:
+                    # Backward difference
+                    normal_y = (self.height_map[x, y - 1] - self.height_map[x, y]) / self.scale
+                else:
+                    # Central difference
+                    normal_y = (self.height_map[x, y - 1] - self.height_map[x, y + 1]) / (2 * self.scale)
 
-                    # Normalize
-                    length = np.sqrt(normal_x**2 + normal_y**2 + normal_z**2)
-                    if length > 0:
-                        normal_x /= length
-                        normal_y /= length
-                        normal_z /= length
+                # Normalize
+                length = np.sqrt(normal_x**2 + normal_y**2 + normal_z**2)
+                if length > 1e-6:
+                    normal_x /= length
+                    normal_y /= length
+                    normal_z /= length
 
                 normal.addData3f(normal_x, normal_y, normal_z)
 

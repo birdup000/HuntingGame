@@ -56,7 +56,8 @@ GRAPHICS_CONFIG = {
     'foliage_wind': True,
     'hdr_rendering': True,
     'fxaa': True,
-    'texture_filtering': 'anisotropic'
+    'texture_filtering': 'anisotropic',
+    'debug_lights': False
 }
 
 # Advanced Graphics Settings for PBR, Lighting, and Effects

@@ -84,21 +84,39 @@ def create_terrain_texture(height_map: np.ndarray) -> Texture:
 
     image = PNMImage(h, w, 4)
 
-    # Create a snow texture with Perlin noise for variation
-    snow_color = (0.95, 0.95, 0.98)
+    # Normalize height map
+    min_h = np.min(height_map)
+    max_h = np.max(height_map)
+    if max_h == min_h:
+        normalized_height = np.full_like(height_map, 0.5)
+    else:
+        normalized_height = (height_map - min_h) / (max_h - min_h)
 
     for x in range(h):
         for y in range(w):
-            # Add Perlin noise for subtle variations in the snow
-            noise_val = _perlin_like_noise(x / 32.0, y / 32.0, 1.0) * 0.05
-            
-            # Apply the noise to the base snow color
-            color = tuple(max(0.0, min(1.0, c + noise_val)) for c in snow_color)
-            
+            height = normalized_height[x, y]
+
+            # Define terrain colors based on height
+            if height < 0.3:
+                # Low areas: greens
+                base_color = (0.2, 0.4, 0.1)
+            elif height < 0.7:
+                # Mid areas: browns
+                base_color = (0.4, 0.3, 0.2)
+            else:
+                # High areas: grays
+                base_color = (0.5, 0.5, 0.5)
+
+            # Add Perlin noise for variation
+            noise_val = _perlin_like_noise(x / 32.0, y / 32.0, 1.0) * 0.1
+
+            # Apply the noise to the base color
+            color = tuple(max(0.0, min(1.0, c + noise_val)) for c in base_color)
+
             image.setXel(x, y, *color)
             image.setAlpha(x, y, 1.0)
 
-    texture = Texture("snow-terrain-texture")
+    texture = Texture("terrain-texture")
     texture.load(image)
     texture.setWrapU(Texture.WMRepeat)
     texture.setWrapV(Texture.WMRepeat)

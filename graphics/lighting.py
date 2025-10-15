@@ -9,6 +9,9 @@ from panda3d.core import (
 )
 import math
 import random
+import config
+
+debug_visualizer = None
 
 
 class DynamicLighting:
@@ -31,7 +34,8 @@ class DynamicLighting:
         self.ambient_light_base_color = None
         self.sky_ambient_base_color = None
         self.rim_light_base_color = None
-        
+        self.debug_visualizer = None
+
     def setup_advanced_lighting(self):
         """Set up photorealistic lighting system with PBR support."""
         if self.is_setup:
@@ -55,7 +59,7 @@ class DynamicLighting:
         
         # Ambient skylight
         self.ambient_light = AmbientLight('skylight')
-        self.ambient_light.setColor(Vec4(0.2, 0.3, 0.5, 1.0))  # Blue sky color
+        self.ambient_light.setColor(Vec4(0.3, 0.3, 0.3, 1.0))  # Blue sky color
         ambient_np = self.render.attachNewNode(self.ambient_light)
         self.render.setLight(ambient_np)
         
@@ -79,21 +83,35 @@ class DynamicLighting:
         self.render.setLight(rim_np)
         self.rim_light_base_color = Vec4(self.rim_light.getColor())
 
+        if config.GRAPHICS_CONFIG.get('debug_lights', False):
+            global debug_visualizer
+            if debug_visualizer is None:
+                debug_visualizer = LightDebugVisualizer(self.render)
+            self.debug_visualizer = debug_visualizer
+            self.debug_visualizer.create_direction_vector(self.sun_light.getDirection())
+            self.debug_visualizer.toggle(True)
+
         self.sun_light_base_color = Vec4(self.sun_light.getColor())
         self.ambient_light_base_color = Vec4(self.ambient_light.getColor())
         self.sky_ambient_base_color = Vec4(self.sky_ambient.getColor())
         
         # Volumetric fog for atmosphere depth
         fog = Fog('atmosphere')
-        fog.setColor(0.65, 0.75, 0.85)
-        fog.setExpDensity(0.003)
+        fog.setColor(0.5, 0.5, 0.5)
+        fog.setExpDensity(0.001)
         self.render.setFog(fog)
         
         # Enable PBR lighting model
         self._setup_pbr_lights()
         self.render.setShaderAuto()
-        
+
         self.is_setup = True
+
+    def toggle_debug_lights(self):
+        """Toggle debug light visualizations."""
+        global debug_visualizer
+        if debug_visualizer:
+            debug_visualizer.toggle(not debug_visualizer.enabled)
     
     def _setup_pbr_lights(self):
         """Additional lighting for PBR rendering."""
@@ -173,8 +191,15 @@ class DynamicLighting:
         spot_np = self.render.attachNewNode(spot)
         spot_np.setPos(position)
         spot_np.setHpr(direction[0], direction[1], direction[2])
-        
+
         self.render.setLight(spot_np)
+
+        if self.debug_visualizer:
+            lens = spot.getLens()
+            fov = lens.getFov()[0]
+            range_val = lens.getFar()
+            self.debug_visualizer.create_cone_geometry(spot_np, fov, range_val)
+
         return spot_np
     
     def adjust_for_weather(self, rain_intensity=0.0, fog_density=0.0):
@@ -243,7 +268,6 @@ class VolumetricFog:
         # This would work with post-processing shaders
         # For now, we'll simulate with fog density variation
         if light_source:
-            # TODO: Implement volumetric light shafts
             pass
 
 
@@ -257,7 +281,8 @@ class PointLightEmitter:
         self.radius = radius
         self.intensity = 1.0
         self.decay = 0.01
-        
+        self.debug_visualizer = debug_visualizer
+
         self.create_light()
         
     def create_light(self):
@@ -269,6 +294,9 @@ class PointLightEmitter:
         self.light_np = self.render.attachNewNode(point_light)
         self.light_np.setPos(self.position)
         self.render.setLight(self.light_np)
+
+        if self.debug_visualizer:
+            self.debug_visualizer.create_attenuation_sphere(self.position, 5.0)
         
     def update(self, dt):
         """Update light intensity and position."""
@@ -333,3 +361,111 @@ LIGHTING_PRESETS = {
         'fill_factor': 0.1
     }
 }
+
+
+class LightDebugVisualizer:
+    """Creates wireframe debug visualizations for light sources."""
+
+    def __init__(self, render):
+        self.render = render
+        self.debug_node = self.render.attachNewNode('debug_lights')
+        self.enabled = False
+        self.visuals = []
+
+    def toggle(self, enabled):
+        """Toggle debug visuals on/off."""
+        self.enabled = enabled
+        self.debug_node.setVisible(enabled)
+
+    def create_direction_vector(self, direction, length=10.0):
+        """Create wireframe direction vector for directional lights."""
+        from panda3d.core import GeomVertexData, GeomVertexFormat, GeomVertexWriter, GeomLines, GeomNode
+
+        geom = GeomVertexData('direction', GeomVertexFormat.getV3(), Geom.UHStatic)
+        vertex = GeomVertexWriter(geom, 'vertex')
+        vertex.addData3f(0, 0, 0)
+        end = direction * length
+        vertex.addData3f(end.x, end.y, end.z)
+
+        lines = GeomLines(Geom.UHStatic)
+        lines.addVertex(0)
+        lines.addVertex(1)
+        geom.addPrimitive(lines)
+
+        node = GeomNode('direction')
+        node.addGeom(geom)
+        visual = self.debug_node.attachNewNode(node)
+        self.visuals.append(visual)
+        return visual
+
+    def create_attenuation_sphere(self, position, radius):
+        """Create wireframe attenuation sphere for point lights."""
+        from panda3d.core import GeomVertexData, GeomVertexFormat, GeomVertexWriter, GeomLines, GeomNode
+
+        geom = GeomVertexData('sphere', GeomVertexFormat.getV3(), Geom.UHStatic)
+        vertex = GeomVertexWriter(geom, 'vertex')
+        lines = GeomLines(Geom.UHStatic)
+        segments = 16
+
+        for plane in range(3):
+            for i in range(segments):
+                angle = 2 * math.pi * i / segments
+                next_angle = 2 * math.pi * (i + 1) / segments
+                if plane == 0:  # xy
+                    vertex.addData3f(radius * math.cos(angle), radius * math.sin(angle), 0)
+                    vertex.addData3f(radius * math.cos(next_angle), radius * math.sin(next_angle), 0)
+                elif plane == 1:  # xz
+                    vertex.addData3f(radius * math.cos(angle), 0, radius * math.sin(angle))
+                    vertex.addData3f(radius * math.cos(next_angle), 0, radius * math.sin(next_angle))
+                else:  # yz
+                    vertex.addData3f(0, radius * math.cos(angle), radius * math.sin(angle))
+                    vertex.addData3f(0, radius * math.cos(next_angle), radius * math.sin(next_angle))
+                lines.addVertex(len(vertex.getData()) - 2)
+                lines.addVertex(len(vertex.getData()) - 1)
+
+        geom.addPrimitive(lines)
+        node = GeomNode('sphere')
+        node.addGeom(geom)
+        visual = self.debug_node.attachNewNode(node)
+        visual.setPos(position)
+        self.visuals.append(visual)
+        return visual
+
+    def create_cone_geometry(self, light_node, fov, range_val):
+        """Create wireframe cone geometry for spotlights."""
+        from panda3d.core import GeomVertexData, GeomVertexFormat, GeomVertexWriter, GeomLines, GeomNode
+
+        geom = GeomVertexData('cone', GeomVertexFormat.getV3(), Geom.UHStatic)
+        vertex = GeomVertexWriter(geom, 'vertex')
+        lines = GeomLines(Geom.UHStatic)
+        apex = Vec3(0, 0, 0)
+        base_center = Vec3(0, 0, -range_val)
+        radius = range_val * math.tan(math.radians(fov / 2))
+        segments = 16
+        base_vertices = []
+
+        for i in range(segments):
+            angle = 2 * math.pi * i / segments
+            x = radius * math.cos(angle)
+            y = radius * math.sin(angle)
+            vertex.addData3f(x, y, base_center.z)
+            base_vertices.append(len(vertex.getData()) - 1)
+
+        # Connect apex to base
+        for v in base_vertices:
+            vertex.addData3f(apex.x, apex.y, apex.z)
+            lines.addVertex(v)
+            lines.addVertex(len(vertex.getData()) - 1)
+
+        # Connect base edges
+        for i in range(segments):
+            lines.addVertex(base_vertices[i])
+            lines.addVertex(base_vertices[(i + 1) % segments])
+
+        geom.addPrimitive(lines)
+        node = GeomNode('cone')
+        node.addGeom(geom)
+        visual = self.debug_node.attachNewNode(node)
+        visual.reparentTo(light_node)
+        self.visuals.append(visual)
+        return visual

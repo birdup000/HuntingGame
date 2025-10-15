@@ -3,7 +3,7 @@ Collision detection module for the 3D Hunting Simulator.
 Handles collision detection between projectiles and game objects.
 """
 
-from typing import List, Dict, Callable, Any, Optional, TYPE_CHECKING
+from typing import List, Dict, Callable, TYPE_CHECKING
 from panda3d.core import CollisionTraverser, CollisionHandlerQueue, CollisionNode, CollisionSphere, BitMask32, Point3, Vec3
 
 if TYPE_CHECKING:
@@ -106,7 +106,7 @@ class CollisionManager:
     def add_projectile(self, projectile: 'Projectile'):
         """Add a projectile to collision detection."""
         # Set up collision node and Python tag
-        projectile.collision_node.setFromCollideMask(BitMask32.allOff())
+        projectile.collision_node.setFromCollideMask(self.ANIMAL_MASK)
         projectile.collision_node.setIntoCollideMask(self.PROJECTILE_MASK)
 
         # Attach to render and set Python tag

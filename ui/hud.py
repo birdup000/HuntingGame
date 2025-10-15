@@ -3,6 +3,7 @@ HUD module for the 3D Hunting Simulator.
 Handles heads-up display elements like health, ammo, crosshair, and score.
 """
 
+import logging
 import os
 import pygame
 from typing import Optional, Tuple, Dict
@@ -11,7 +12,6 @@ from panda3d.core import Vec4, TextNode, TransparencyAttrib, Filename
 from direct.gui.DirectGui import DirectFrame, DirectWaitBar
 from direct.gui.OnscreenText import OnscreenText
 from direct.gui.OnscreenImage import OnscreenImage
-from direct.task import Task
 
 from graphics.texture_factory import create_crosshair_texture, create_icon_texture, get_ui_panel_texture
 
@@ -77,7 +77,7 @@ class HUD:
     def setup_pygame(self):
         """Disable Pygame to avoid rendering conflicts - use Panda3D only."""
         self.pygame_initialized = False
-        print("Pygame disabled - using Panda3D UI only")
+        logging.info("Pygame disabled - using Panda3D UI only")
 
     def _register_panel(self, panel: DirectFrame) -> DirectFrame:
         self.hud_panels.append(panel)
@@ -261,7 +261,7 @@ class HUD:
             self.crosshair_image.setColorScale(1, 1, 1, 1)
         except Exception as e:
             self.crosshair_image = None
-            print(f"Crosshair creation failed: {e}")
+            logging.warning(f"Crosshair creation failed: {e}")
 
     def update(self, dt: float):
         """Update HUD elements with current game state."""
@@ -458,7 +458,7 @@ class HUD:
     def add_score(self, points: int):
         """Add points to the player's score."""
         self.score += points
-        print(f"Score updated: +{points}, Total: {self.score}")
+        logging.debug(f"Score updated: +{points}, Total: {self.score}")
         self._idle_time = 0.0
 
     def record_shot(self, hit: bool = False):
@@ -536,4 +536,4 @@ class HUD:
             pygame.quit()
             self.pygame_initialized = False
 
-        print("HUD cleanup completed")
+        logging.info("HUD cleanup completed")

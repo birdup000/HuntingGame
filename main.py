@@ -4,11 +4,17 @@ Main entry point for the 3D Hunting Simulator Game.
 Initializes the game engine and starts the main game loop.
 """
 
-import sys
+import logging
 from direct.showbase.ShowBase import ShowBase
 from core.game import Game
-from graphics.post_processing import PostProcessing, CinematicEffects
-from graphics.settings_manager import GraphicsSettingsManager, create_optimized_graphics
+try:
+    from graphics.post_processing import PostProcessing, CinematicEffects
+    from graphics.settings_manager import create_optimized_graphics
+except ImportError:
+    # Handle cases where graphics modules are incomplete
+    PostProcessing = None
+    CinematicEffects = None
+    create_optimized_graphics = None
 
 class MainApp(ShowBase):
     """Main application class that initializes Panda3D and starts the game."""
@@ -16,7 +22,6 @@ class MainApp(ShowBase):
     def __init__(self):
         """Initialize the Panda3D application and game."""
         # Set window properties for better branding
-        from config import GAME_CONFIG
         ShowBase.__init__(self)
         
         # Ensure proper camera settings for visibility
@@ -25,7 +30,10 @@ class MainApp(ShowBase):
             self.camLens.setNear(0.1)  # Closer near clip
         
         # Initialize graphics systems
-        self.graphics_manager = create_optimized_graphics(self)
+        if create_optimized_graphics is not None:
+            self.graphics_manager = create_optimized_graphics(self)
+        else:
+            self.graphics_manager = None
         self.setup_post_processing()
         
         # PROPER render-to-2D separation to prevent UI artifacts
@@ -55,57 +63,26 @@ class MainApp(ShowBase):
         
     def setup_post_processing(self):
         """Set up post-processing effects for photorealistic rendering."""
+        if PostProcessing is None or CinematicEffects is None:
+            logging.warning("Post-processing modules not available")
+            return
+
         from config import GRAPHICS_CONFIG, ADVANCED_GRAPHICS
-        
+
         self.post_processing = PostProcessing(self)
         self.cinematic = CinematicEffects(self)
-        
+
         # Apply graphics settings
         if GRAPHICS_CONFIG['use_bloom']:
             self.post_processing.enable_bloom(ADVANCED_GRAPHICS['bloom_intensity'])
-            
+
         if GRAPHICS_CONFIG['fxaa']:
             self.post_processing.enable_fxaa()
-            
+
         if GRAPHICS_CONFIG['use_ssao']:
             self.post_processing.enable_ssao(ADVANCED_GRAPHICS['ssao_radius'])
-            
-        print("High-quality post-processing enabled")
-    
-    def setup_graphics_quality(self):
-        """Enhance graphics quality with better rendering settings."""
-        # Enable hardware anti-aliasing
-        from panda3d.core import AntialiasAttrib
-        if hasattr(self, 'props'):
-            self.props.set_antialias(AntialiasAttrib.M_multisample)
-        
-        # Enable better texture filtering
-        from panda3d.core import Texture, AntialiasAttrib
-        Texture.set_textures_power_2(True)
-        self.render.set_antialias(AntialiasAttrib.M_auto)
-        
-        # Improve overall rendering quality with better materials and lighting
-        if hasattr(self, 'render'):
-            # Use better material properties for scene
-            from panda3d.core import Material, LightRampAttrib
-            mat = Material()
-            mat.setShininess(45)  # Higher shininess for more realistic materials
-            mat.setSpecular((0.3, 0.3, 0.3, 1))  # Subtle specular highlights
-            self.render.setMaterial(mat)
-            
-            # Enable better lighting model
-            self.render.setAttrib(LightRampAttrib.makeDefault())
-            
-            # Enable fog for atmospheric depth
-            from panda3d.core import Fog
-            if self.render.has_fog():
-                self.render.clear_fog()
-            
-        # Set better default render properties
-        if hasattr(self, 'render'):
-            self.render.setShaderAuto()
-            
-        print("Graphics quality enhanced")
+
+        logging.info("High-quality post-processing enabled")
 
 def main():
     """Main function to run the application."""
