@@ -79,53 +79,26 @@ def create_vertical_gradient_texture(size: int, top_color: Sequence[float], bott
 def create_terrain_texture(height_map: np.ndarray) -> Texture:
     if height_map is None:
         raise ValueError("height_map must be provided")
-    heights = np.array(height_map, copy=False)
-    h, w = heights.shape
-    minimum = float(np.min(heights))
-    maximum = float(np.max(heights))
-    scale = max(maximum - minimum, 1e-5)
 
-    palette = [
-        (0.25, (0.12, 0.22, 0.08), (0.18, 0.30, 0.10)),  # Dark greens with more variation
-        (0.45, (0.22, 0.16, 0.08), (0.28, 0.20, 0.12)), # Darker dirt with brown tones
-        (0.7, (0.32, 0.32, 0.35), (0.42, 0.42, 0.45)),  # Gray rocks
-        (1.01, (0.82, 0.85, 0.90), (0.92, 0.95, 0.98)),    # White snow
-    ]
+    h, w = height_map.shape
 
     image = PNMImage(h, w, 4)
+
+    # Create a snow texture with Perlin noise for variation
+    snow_color = (0.95, 0.95, 0.98)
+
     for x in range(h):
         for y in range(w):
-            normalized = (heights[x, y] - minimum) / scale
-            prev_threshold = 0.0
-            base_low = (0.10, 0.18, 0.06)
-            base_high = (0.12, 0.22, 0.08)
-            for threshold, low_color, high_color in palette:
-                if normalized <= threshold:
-                    span = threshold - prev_threshold
-                    t = 0.0 if span <= 1e-5 else (normalized - prev_threshold) / span
-                    base_low, base_high = low_color, high_color
-                    color = _lerp(base_low, base_high, t)
-                    break
-                prev_threshold = threshold
-            else:
-                color = base_high
-
-            # Add multi-scale noise for detail with smoother variation
-            # Use Perlin-like noise for large-scale variation
-            large_variation = (_perlin_like_noise(x / 10.0, y / 10.0, 0.5) - 0.5) * 0.12
+            # Add Perlin noise for subtle variations in the snow
+            noise_val = _perlin_like_noise(x / 32.0, y / 32.0, 1.0) * 0.05
             
-            # Use hash noise for fine detail and texture
-            detail = (_hash_noise(x, y) - 0.5) * 0.08
-            fine_detail = (_hash_noise(x * 3, y * 3) - 0.5) * 0.05
-            micro_detail = (_hash_noise(x * 7, y * 7) - 0.5) * 0.03
+            # Apply the noise to the base snow color
+            color = tuple(max(0.0, min(1.0, c + noise_val)) for c in snow_color)
             
-            # Combine all scales for natural appearance
-            total_detail = large_variation + detail + fine_detail + micro_detail
-            color = tuple(max(0.0, min(1.0, c + total_detail)) for c in color)
             image.setXel(x, y, *color)
             image.setAlpha(x, y, 1.0)
 
-    texture = Texture("terrain-detail")
+    texture = Texture("snow-terrain-texture")
     texture.load(image)
     texture.setWrapU(Texture.WMRepeat)
     texture.setWrapV(Texture.WMRepeat)
@@ -337,26 +310,48 @@ def create_sky_texture(size: int = 512) -> Texture:
     cache_key = f"sky-{size}"
 
     def builder() -> Texture:
-        top = (0.35, 0.55, 0.85)  # Sky blue
-        horizon = (0.65, 0.75, 0.85)  # Light horizon
-        image = PNMImage(size, size, 4)
-        sun_center = (size * 0.5, size * 0.3)
-        sun_radius = size * 0.12
+        # Define sky colors
+        top_color = (0.35, 0.55, 0.85)  # Sky blue
+        horizon_color = (0.65, 0.75, 0.85)  # Lighter horizon
 
+        image = PNMImage(size, size, 4)
+
+        # Create sky gradient
         for y in range(size):
-            vertical = y / float(size - 1)
-            base_color = _lerp(top, horizon, vertical)
+            vertical_t = y / float(size - 1)
+            base_color = _lerp(top_color, horizon_color, vertical_t)
             for x in range(size):
-                dx = x - sun_center[0]
-                dy = y - sun_center[1]
-                dist = math.hypot(dx, dy)
-                glow = max(0.0, 1.0 - dist / sun_radius)
-                glow = glow ** 2.5
-                color = tuple(min(1.0, c + glow * 0.35) for c in base_color)
-                image.setXel(x, y, *color)
+                image.setXel(x, y, *base_color)
                 image.setAlpha(x, y, 1.0)
 
-        texture = Texture("sky-gradient")
+        # Add clouds using Perlin noise
+        cloud_color = (1.0, 1.0, 1.0)
+        cloud_coverage = 0.45  # 45% coverage
+
+        for y in range(size):
+            for x in range(size):
+                # Multi-layered Perlin noise for realistic clouds
+                noise1 = _perlin_like_noise(x / (size / 4), y / (size / 4), 0.5)
+                noise2 = _perlin_like_noise(x / (size / 8), y / (size / 8), 1.0) * 0.5
+                noise3 = _perlin_like_noise(x / (size / 16), y / (size / 16), 2.0) * 0.25
+
+                noise_val = (noise1 + noise2 + noise3) / 1.75
+
+                # Apply cloud coverage
+                if noise_val > (1.0 - cloud_coverage):
+                    # Feather the cloud edges
+                    cloud_intensity = (noise_val - (1.0 - cloud_coverage)) / cloud_coverage
+                    cloud_intensity = min(1.0, cloud_intensity * 1.5) # Sharpen the edges a bit
+
+                    # Get current pixel color
+                    current_color = image.getXel(x, y)
+
+                    # Blend sky color with cloud color
+                    final_color = _lerp(current_color, cloud_color, cloud_intensity)
+
+                    image.setXel(x, y, *final_color)
+
+        texture = Texture("sky-with-clouds")
         texture.load(image)
         texture.setWrapU(Texture.WMClamp)
         texture.setWrapV(Texture.WMClamp)
