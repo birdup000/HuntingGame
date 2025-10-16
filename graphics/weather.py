@@ -136,7 +136,10 @@ class WeatherSystem:
     
     def _check_weather_events(self):
         """Random weather events like thunder/lightning."""
-        print("Weather events not implemented")
+        # Weather events are currently disabled to reduce spam
+        # Future implementation would include random lightning/thunder events
+        # based on weather severity and time
+        pass
         
     def _trigger_lightning(self):
         """Create lightning flash effect."""

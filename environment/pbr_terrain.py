@@ -68,11 +68,17 @@ class PBRTerrain:
                 # Apply erosion simulation
                 height = self._apply_erosion_filter(x, y, height)
                 
-                # Create river valleys
+                # Create river valleys - but avoid cutting through the center where player starts
                 if self._is_river_valley(x, y):
-                    height -= 2.0 + abs(self._river_depth(x, y)) * 1.5
+                    # Check if this is near the center where player starts
+                    distance_from_center = math.sqrt((x - self.width/2)**2 + (y - self.height/2)**2)
+                    if distance_from_center < 10:  # Don't cut rivers within 10 units of center
+                        # Reduce river depth near center
+                        height -= 0.5 + abs(self._river_depth(x, y)) * 0.5
+                    else:
+                        height -= 2.0 + abs(self._river_depth(x, y)) * 1.5
                 
-                self.height_map[x, y] = max(height * 3, -1.0)  # clamp minimum
+                self.height_map[x, y] = max(height * 3, 0.0)  # clamp minimum to 0.0 to avoid negative terrain
 
         self.terrain_texture = create_terrain_texture(self.height_map)
     
@@ -158,15 +164,16 @@ class PBRTerrain:
         for x in range(self.width - 1):
             for y in range(self.height - 1):
                 idx = x * self.height + y
-                
-                # Two triangles per quad
-                tris.addVertex(idx)
-                tris.addVertex(idx + 1)
-                tris.addVertex(idx + self.height)
-                
-                tris.addVertex(idx + 1)
-                tris.addVertex(idx + self.height + 1)
-                tris.addVertex(idx + self.height)
+                a = idx
+                b = idx + self.height
+                c = idx + 1
+                d = idx + self.height + 1
+
+                # Two triangles per quad with counter-clockwise winding for upward-facing normals
+                tris.addVertices(a, b, c)
+                tris.addVertices(c, b, d)
+
+        tris.closePrimitive()
         
         # Create final geometry
         geom = Geom(vdata)

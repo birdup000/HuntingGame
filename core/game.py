@@ -102,6 +102,10 @@ class Game:
         # Set up lighting
         self.setup_lighting()
 
+        # Adjust player position to terrain after environment is created
+        if self.player:
+            self.player.adjust_to_terrain()
+
         # Set up input handling for UI
         self.setup_ui_controls()
 
@@ -255,6 +259,8 @@ class Game:
         # Set up player controls
         if self.player and hasattr(self.player, 'setup_controls'):
             self.player.setup_controls()
+            # Adjust to terrain when starting gameplay
+            self.player.adjust_to_terrain()
 
         # Set up HUD for player
         if self.player:

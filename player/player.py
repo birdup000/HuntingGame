@@ -70,9 +70,9 @@ class Player:
     def __init__(self, app, setup_controls=True):
         """Initialize the player with the Panda3D application."""
         self.app = app
-        # Start above terrain height to avoid clipping
-        terrain_height = self.get_terrain_height(0, 0)
-        self.position = Point3(0, 0, terrain_height + 1.8)  # 1.8 units above terrain (more natural height)
+        # Start at a fixed height initially, will be adjusted when terrain is available
+        initial_height = 10.0  # Start higher to ensure terrain is visible
+        self.position = Point3(0, 0, initial_height)
         self.velocity = Vec3(0, 0, 0)
         self.move_speed = 10.0
         self.mouse_sensitivity = 0.2
@@ -83,12 +83,12 @@ class Player:
         # Camera setup - ensure better positioning
         self.camera_node = getattr(self.app, 'camera', None)
         if self.camera_node is not None:
-            # Position camera properly above terrain
-            camera_height = terrain_height + 2.0  # At eye level
+            # Position camera properly - start higher for better visibility
+            camera_height = initial_height + 1.0  # Camera slightly above player
             self.camera_node.setPos(0, -self.camera_distance, camera_height)
             self.camera_node.lookAt(self.position)
             # Add slight upward tilt for better view
-            self.camera_node.setP(5)  # Tilt up 5 degrees
+            self.camera_node.setP(10)  # Tilt up 10 degrees for better terrain visibility
         else:
             logging.warning("Camera not available - running in headless mode")
 
@@ -376,6 +376,47 @@ class Player:
         except (AttributeError, TypeError, Exception):
             pass
         return 1.0
+
+    def adjust_to_terrain(self):
+        """Adjust player position to proper height above terrain once terrain is available."""
+        try:
+            if hasattr(self.app, 'game') and self.app.game and hasattr(self.app.game, 'terrain') and self.app.game.terrain:
+                # Get terrain height at player position
+                terrain_height = self.app.game.terrain.get_height(self.position.getX(), self.position.getY())
+                
+                # Position player above terrain 
+                self.position.setZ(terrain_height + 1.8)
+                
+                # Adjust camera position as well
+                if self.camera_node is not None:
+                    camera_height = terrain_height + 2.8  # Camera at eye level
+                    self.camera_node.setZ(camera_height)
+                    
+                if self.model is not None:
+                    self.model.setPos(self.position)
+                    
+                logging.info(f"Player adjusted to terrain height: {terrain_height}")
+        except Exception as e:
+            logging.warning(f"Failed to adjust player to terrain: {e}")
+
+    def cleanup(self):
+        """Clean up player resources."""
+        if hasattr(self.app, 'taskMgr'):
+            self.app.taskMgr.remove('mouse_look')
+
+        if self.model is not None:
+            self.model.removeNode()
+
+        # Clean up projectiles
+        for projectile in self.projectiles:
+            if self.collision_manager:
+                self.collision_manager.remove_projectile(projectile)
+            projectile.cleanup()
+        self.projectiles.clear()
+
+        # Clean up collision manager
+        if self.collision_manager:
+            self.collision_manager.cleanup()
 
     def cleanup(self):
         """Clean up player resources."""
