@@ -9,7 +9,7 @@ from panda3d.core import CollisionTraverser, CollisionHandlerQueue
 from player.player import Player
 from environment.pbr_terrain import PBRTerrain, OptimizedTerrainRenderer
 from environment.decor import DecorManager
-from environment.sky import SkyDome
+from environment.simple_sky import SimpleSkyDome
 from animals.animal import Deer, Rabbit
 from ui.menus import UIManager
 from panda3d.core import Vec3, CardMaker, TransparencyAttrib
@@ -170,7 +170,7 @@ class Game:
         self.setup_collision_detection()
 
         if not self.sky:
-            self.sky = SkyDome(self.app)
+            self.sky = SimpleSkyDome(self.app, radius=1000.0)
 
 
     def setup_ui(self):

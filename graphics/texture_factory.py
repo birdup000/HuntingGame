@@ -324,50 +324,80 @@ def create_crosshair_texture(size: int = 192) -> Texture:
     return _cache_texture(cache_key, builder)
 
 
-def create_sky_texture(size: int = 512) -> Texture:
+def create_sky_texture(size: int = 1024) -> Texture:
+    size = max(64, size)
     cache_key = f"sky-{size}"
+
+    # Always rebuild the sky texture so visual changes appear immediately
+    if cache_key in _TEXTURE_CACHE:
+        del _TEXTURE_CACHE[cache_key]
 
     def builder() -> Texture:
         # Define sky colors
-        top_color = (0.35, 0.55, 0.85)  # Sky blue
-        horizon_color = (0.65, 0.75, 0.85)  # Lighter horizon
+        top_color = (0.08, 0.19, 0.44)      # Deep zenith blue
+        mid_color = (0.24, 0.46, 0.78)      # Mid-level blue
+        horizon_color = (0.80, 0.88, 0.97)  # Bright horizon
 
         image = PNMImage(size, size, 4)
 
         # Create sky gradient
         for y in range(size):
             vertical_t = y / float(size - 1)
-            base_color = _lerp(top_color, horizon_color, vertical_t)
+            if vertical_t < 0.55:
+                base_color = _lerp(top_color, mid_color, vertical_t / 0.55)
+            else:
+                base_color = _lerp(mid_color, horizon_color, (vertical_t - 0.55) / 0.45)
             for x in range(size):
                 image.setXel(x, y, *base_color)
                 image.setAlpha(x, y, 1.0)
 
-        # Add clouds using Perlin noise
-        cloud_color = (1.0, 1.0, 1.0)
-        cloud_coverage = 0.45  # 45% coverage
+        # Add clouds using layered Perlin noise with brighter highlights
+        base_cloud = (0.95, 0.97, 1.0)
+        shadow_cloud = (0.68, 0.74, 0.88)
+        highlight = (1.0, 1.0, 0.92)
+        cloud_floor = 0.42
+        coverage = 0.24
 
         for y in range(size):
+            vertical_factor = y / float(size - 1)
             for x in range(size):
-                # Multi-layered Perlin noise for realistic clouds
-                noise1 = _perlin_like_noise(x / (size / 4), y / (size / 4), 0.5)
-                noise2 = _perlin_like_noise(x / (size / 8), y / (size / 8), 1.0) * 0.5
-                noise3 = _perlin_like_noise(x / (size / 16), y / (size / 16), 2.0) * 0.25
+                nx = x / (size / 4)
+                ny = y / (size / 6)
 
-                noise_val = (noise1 + noise2 + noise3) / 1.75
+                noise1 = _perlin_like_noise(nx, ny, 0.35)
+                noise2 = _perlin_like_noise(x / (size / 9), y / (size / 9), 0.9) * 0.9
+                noise3 = _perlin_like_noise(x / (size / 25), y / (size / 25), 1.8) * 0.55
+                detail = _perlin_like_noise(x / (size / 80), y / (size / 80), 3.7) * 0.35
 
-                # Apply cloud coverage
-                if noise_val > (1.0 - cloud_coverage):
-                    # Feather the cloud edges
-                    cloud_intensity = (noise_val - (1.0 - cloud_coverage)) / cloud_coverage
-                    cloud_intensity = min(1.0, cloud_intensity * 1.5) # Sharpen the edges a bit
+                noise_val = (noise1 + noise2 + noise3 + detail) / 2.0
 
-                    # Get current pixel color
+                horizon_boost = max(0.0, 1.0 - vertical_factor * 1.2) * 0.2
+                cloud_threshold = cloud_floor - horizon_boost
+
+                if noise_val > cloud_threshold:
+                    density = min(1.0, (noise_val - cloud_threshold) / max(coverage, 1e-5))
+                    softness = 0.45 + 0.4 * max(0.0, 1.0 - vertical_factor * 0.85)
+                    mask = min(1.0, max(0.0, density) ** 0.55 * softness)
+
                     current_color = image.getXel(x, y)
+                    shaded = _lerp(base_cloud, shadow_cloud, max(0.0, 0.6 - density) * 1.1)
+                    cloud_color = _lerp(shaded, highlight, min(1.0, density * 1.6))
+                    final_color = (
+                        current_color[0] * (1 - mask) + cloud_color[0] * mask,
+                        current_color[1] * (1 - mask) + cloud_color[1] * mask,
+                        current_color[2] * (1 - mask) + cloud_color[2] * mask,
+                    )
 
-                    # Blend sky color with cloud color
-                    final_color = _lerp(current_color, cloud_color, cloud_intensity)
+                    # Add bright silver linings near the top of clouds
+                    if density > 0.65:
+                        rim = min(1.0, (density - 0.65) * 3.0)
+                        final_color = (
+                            final_color[0] + rim * 0.12,
+                            final_color[1] + rim * 0.1,
+                            final_color[2] + rim * 0.08,
+                        )
 
-                    image.setXel(x, y, *final_color)
+                    image.setXel(x, y, *tuple(min(1.0, max(0.0, c)) for c in final_color))
 
         texture = Texture("sky-with-clouds")
         texture.load(image)
