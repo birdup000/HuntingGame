@@ -8,6 +8,7 @@ import sys
 import unittest
 from unittest.mock import Mock, patch, MagicMock
 import pytest
+from unittest.mock import ANY
 
 # Add project root to path
 sys.path.insert(0, '.')
@@ -174,6 +175,133 @@ class TestErrorPaths(unittest.TestCase):
         # This should handle edge cases gracefully
         terrain_height = terrain.get_height(deer.position.x, deer.position.y)
         self.assertIsInstance(terrain_height, float)
+
+class TestGameComprehensive(unittest.TestCase):
+    """Comprehensive tests for Game class to improve coverage."""
+    
+    def setUp(self):
+        """Setup common test fixtures."""
+        self.mock_app = Mock()
+        self.mock_app.taskMgr = Mock()
+        self.mock_app.taskMgr.globalClock = Mock()
+        self.mock_app.render = Mock()
+        self.mock_app.loader = Mock()
+        self.mock_app.defineVirtualMouse = Mock()
+        
+        # Mock globalClock.getFrameTime to return incrementing values
+        self.frame_time = 0.0
+        def mock_get_frame_time():
+            self.frame_time += 0.016
+            return self.frame_time
+        self.mock_app.taskMgr.globalClock.getFrameTime = mock_get_frame_time
+        
+    def test_game_state_transitions(self):
+        """Test all game state transitions."""
+        from core.game import Game
+        
+        game = Game(self.mock_app)
+        
+        # Test initial state
+        self.assertEqual(game.game_state, 'main_menu')
+        self.assertFalse(game.is_running)
+        
+        # Test start gameplay
+        game.start_gameplay()
+        self.assertEqual(game.game_state, 'playing')
+        
+        # Test pause
+        game.pause_game()
+        self.assertEqual(game.game_state, 'paused')
+        
+        # Test resume
+        game.resume_game()
+        self.assertEqual(game.game_state, 'playing')
+        
+        # Test game over
+        game.game_over()
+        self.assertEqual(game.game_state, 'game_over')
+        
+        # Test main menu
+        game.show_main_menu()
+        self.assertEqual(game.game_state, 'main_menu')
+        
+    def test_game_setup_methods(self):
+        """Test various setup methods."""
+        from core.game import Game
+        
+        game = Game(self.mock_app)
+        
+        # Test UI setup
+        with patch.object(game, 'setup_ui'):
+            game.setup_ui()
+            self.assertIsNotNone(game.ui_manager)
+        
+        # Test lighting setup
+        game.setup_lighting()  # Should not raise exception
+        
+        # Test escape handling
+        game.handle_escape()  # Should not raise exception when game_state is main_menu
+        
+    def test_game_cleanup_methods(self):
+        """Test cleanup methods."""
+        from core.game import Game
+        
+        game = Game(self.mock_app)
+        
+        # Mock all the cleanupable objects
+        game.player = Mock()
+        game.terrain = Mock()
+        game.sky = Mock()
+        game.decor_manager = Mock()
+        game.ui_manager = Mock()
+        game.dynamic_lighting = Mock()
+        game.weather_system = Mock()
+        game.foliage_renderer = Mock()
+        
+        # Mock cleanup methods
+        game.player.cleanup = Mock()
+        game.terrain.cleanup = Mock()
+        game.sky.cleanup = Mock()
+        game.decor_manager.cleanup = Mock()
+        game.ui_manager.cleanup = Mock()
+        game.dynamic_lighting.cleanup = Mock()
+        game.weather_system.cleanup = Mock()
+        game.foliage_renderer.cleanup = Mock()
+        
+        game.stop()
+        
+        # Verify cleanup was called
+        game.player.cleanup.assert_called()
+        game.terrain.cleanup.assert_called()
+        game.sky.cleanup.assert_called()
+        
+    def test_safety_checks(self):
+        """Test safety checks and null handling."""
+        from core.game import Game
+        
+        game = Game(self.mock_app)
+        
+        # Test cleanup with None objects
+        game.player = None
+        game.terrain = None
+        game.sky = None
+        game.decor_manager = None
+        game.ui_manager = None
+        game.dynamic_lighting = None
+        game.weather_system = None
+        game.foliage_renderer = None
+        
+        game.stop()  # Should not raise exception
+        
+        # Test with mixed None and valid objects
+        game.player = Mock()
+        game.player.cleanup = Mock()
+        game.terrain = Mock()
+        game.terrain.cleanup = Mock()
+        
+        game.stop()  # Should not raise exception
+        game.player.cleanup.assert_called()
+        game.terrain.cleanup.assert_called()
 
 class TestIntegrationPaths(unittest.TestCase):
     """Test integration paths between modules for better coverage."""
