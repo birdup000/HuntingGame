@@ -1,0 +1,29 @@
+# BDD Testing Requirements for 3D Hunting Simulator
+# These packages are required for Behavior-Driven Development testing
+
+# Core BDD framework
+pytest-bdd>=5.0.0        # Gherkin syntax support with pytest
+behave>=1.2.0            # Alternative BDD framework support
+
+# Testing infrastructure
+pytest>=7.0.0           # Test runner and framework
+pytest-cov>=4.0.0        # Code coverage reporting
+pytest-mock>=3.10.0      # Mocking support for tests
+pytest-html>=3.1.0       # HTML test reports
+pytest-xdist>=3.0.0      # Parallel test execution (optional)
+
+# Code quality and analysis
+coverage>=7.0.0         # Code coverage measurement
+pygments>=2.10.0        # Syntax highlighting in reports
+
+# Documentation generation
+sphinx>=5.0.0           # Documentation generation
+sphinx-rtd-theme>=1.0.0  # Professional theme for docs
+
+# Additional testing utilities
+faker>=19.0.0            # Generate fake test data
+freezegun>=1.2.0         # Time manipulation for tests
+httpx>=0.25.0            # HTTP client testing (if needed for future features)
+
+# Optional: Performance and load testing
+locust>=2.14.0           # Load testing (for future scalability testing)

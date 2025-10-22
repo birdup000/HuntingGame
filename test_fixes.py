@@ -30,9 +30,9 @@ def test_terrain_generation():
         print(f"SUCCESS: Terrain height at center: {height}")
     else:
         print("ERROR: Terrain height map is None")
-        return False
+        assert False, "Terrain height map should not be None"
     
-    return True
+    assert True, "Terrain generation test completed successfully"
 
 def test_animal_placement():
     """Test animal placement on terrain."""
