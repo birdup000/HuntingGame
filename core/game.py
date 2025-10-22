@@ -388,10 +388,12 @@ class Game:
             deer_positions.append((sx, sy))
 
         deer_spawn_attempts = 0
+        max_spawn_attempts = min(10000, animal_cfg['deer_count'] * 1000)  # Dynamic limit based on requested count
         while len(deer_positions) < animal_cfg['deer_count']:
             deer_spawn_attempts += 1
-            if deer_spawn_attempts > 10000:  # Safety check for infinite loop
+            if deer_spawn_attempts > max_spawn_attempts:  # Safety check for infinite loop
                 logging.error(f"Infinite loop detected in deer spawning after {deer_spawn_attempts} attempts. spawn_radius={spawn_radius}")
+                logging.warning(f"Failed to spawn all {animal_cfg['deer_count']} deer. Spawned {len(deer_positions)} instead.")
                 break
             x = random.uniform(-spawn_radius, spawn_radius)
             y = random.uniform(-spawn_radius, spawn_radius)
@@ -416,10 +418,12 @@ class Game:
             rabbit_positions.append((sx, sy))
 
         rabbit_spawn_attempts = 0
+        max_spawn_attempts = min(10000, animal_cfg['rabbit_count'] * 1000)  # Dynamic limit based on requested count
         while len(rabbit_positions) < animal_cfg['rabbit_count']:
             rabbit_spawn_attempts += 1
-            if rabbit_spawn_attempts > 10000:  # Safety check for infinite loop
+            if rabbit_spawn_attempts > max_spawn_attempts:  # Safety check for infinite loop
                 logging.error(f"Infinite loop detected in rabbit spawning after {rabbit_spawn_attempts} attempts. spawn_radius={spawn_radius}")
+                logging.warning(f"Failed to spawn all {animal_cfg['rabbit_count']} rabbits. Spawned {len(rabbit_positions)} instead.")
                 break
             x = random.uniform(-spawn_radius, spawn_radius)
             y = random.uniform(-spawn_radius, spawn_radius)
@@ -606,7 +610,7 @@ class Game:
             self._sync_hud_objectives()
 
             # Check for game over conditions (e.g., player health)
-            if self.player and hasattr(self.player, 'health') and self.player.health <= 0:
+            if self.player and hasattr(self.player, 'health') and self.player.health <= 0.001:  # Use small epsilon for float comparison
                 self.game_over()
 
         # Update UI regardless of game state
@@ -650,51 +654,101 @@ class Game:
     def stop(self):
         """Stop the game loop."""
         self.is_running = False
+        
+        # Stop collision system properly
+        if hasattr(self, 'collision_manager') and self.collision_manager:
+            self.collision_manager.cleanup()
+
+        # Clean up player
         if self.player:
             self.player.cleanup()
+            self.player = None
 
-        # Clean up animals
+        # Clean up animals and remove from collision detection
         for animal in self.animals:
-            animal.cleanup()
+            if self.player and hasattr(self.player, 'remove_animal_from_collision'):
+                self.player.remove_animal_from_collision(animal)
+            if hasattr(animal, 'cleanup'):
+                animal.cleanup()
         self.animals.clear()
 
         # Clean up terrain
         if self.terrain:
-            self.terrain.cleanup()
+            if hasattr(self.terrain, 'cleanup'):
+                self.terrain.cleanup()
+            self.terrain = None
 
         # Clean up sky and props
         if self.sky:
-            self.sky.cleanup()
+            if hasattr(self.sky, 'cleanup'):
+                self.sky.cleanup()
             self.sky = None
+        
+        # Clean up rocks safely
         for rock in self.rocks:
-            rock.removeNode()
+            if hasattr(rock, 'removeNode'):
+                try:
+                    rock.removeNode()
+                except:
+                    pass  # Node already removed
         self.rocks = []
 
+        # Clean up decor manager
         if self.decor_manager:
-            self.decor_manager.cleanup()
+            if hasattr(self.decor_manager, 'cleanup'):
+                self.decor_manager.cleanup()
             self.decor_manager = None
+
+        # Clean up advanced graphics systems
+        if self.dynamic_lighting:
+            if hasattr(self.dynamic_lighting, 'cleanup'):
+                self.dynamic_lighting.cleanup()
+            self.dynamic_lighting = None
+        if self.weather_system:
+            if hasattr(self.weather_system, 'cleanup'):
+                self.weather_system.cleanup()
+            self.weather_system = None
+        if self.foliage_renderer:
+            if hasattr(self.foliage_renderer, 'cleanup'):
+                self.foliage_renderer.cleanup()
+            self.foliage_renderer = None
+
+        # Clean up graphics manager
+        if hasattr(self, 'graphics_manager') and self.graphics_manager:
+            if hasattr(self.graphics_manager, 'cleanup'):
+                self.graphics_manager.cleanup()
 
         # Clean up UI
         if self.ui_manager:
-            self.ui_manager.cleanup()
+            if hasattr(self.ui_manager, 'cleanup'):
+                self.ui_manager.cleanup()
+            self.ui_manager = None
 
         logging.info("Hunting Simulator Game Stopped")
 
     def handle_animal_killed(self, animal):
         """Handle when an animal is killed - update score and statistics."""
-        if self.ui_manager and self.ui_manager.hud:
+        if self.ui_manager and self.ui_manager.hud and animal:
             # Award points based on animal type
             points = 10  # Base points
-            if hasattr(animal, 'species'):
-                if animal.species.lower() == 'deer':
+            species = getattr(animal, 'species', None)
+            
+            if species and isinstance(species, str):
+                species_lower = species.lower()
+                if species_lower == 'deer':
                     points = 50
-                elif animal.species.lower() == 'rabbit':
+                elif species_lower == 'rabbit':
                     points = 25
-
+            
             self.ui_manager.add_score(points)
             self.ui_manager.record_shot(hit=True)
-            self.ui_manager.hud.register_animal_kill(getattr(animal, 'species', ''))
-            self.ui_manager.show_message(f"{animal.species} killed! +{points} points", 2.0)
+            self.ui_manager.hud.register_animal_kill(species if isinstance(species, str) else '')
+            
+            species_name = getattr(animal, 'species', 'Animal')
+            if species_name and hasattr(animal, 'species'):
+                self.ui_manager.show_message(f"{species_name} killed! +{points} points", 2.0)
+            else:
+                self.ui_manager.show_message(f"Animal killed! +{points} points", 2.0)
 
     def cleanup_game(self):
         """Clean up current game session for restart."""

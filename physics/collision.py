@@ -81,7 +81,7 @@ class CollisionManager:
 
     def add_animal(self, animal: 'Animal'):
         """Add an animal to collision detection."""
-        if animal.node and not animal.is_dead():
+        if animal is not None and hasattr(animal, 'node') and animal.node and hasattr(animal, 'is_dead') and not animal.is_dead():
             # Create collision node for animal
             collision_node = CollisionNode(f'animal_collision_{id(animal)}')
             collision_node.addSolid(CollisionSphere(0, 0, 0, 1.0))  # Simple sphere collision
@@ -98,13 +98,35 @@ class CollisionManager:
 
     def remove_animal(self, animal: 'Animal'):
         """Remove an animal from collision detection."""
-        if hasattr(animal, 'collision_np'):
-            self.traverser.removeCollider(animal.collision_np)
-            animal.collision_np.removeNode()
-            delattr(animal, 'collision_np')
+        if animal is not None and hasattr(animal, 'collision_np') and animal.collision_np:
+            try:
+                # Try to remove from traverser safely
+                if hasattr(self.traverser, 'getColliderQueue'):
+                    if animal.collision_np in self.traverser.getColliderQueue():
+                        self.traverser.removeCollider(animal.collision_np)
+                else:
+                    # Fallback for different Panda3D versions
+                    try:
+                        self.traverser.removeCollider(animal.collision_np)
+                    except:
+                        pass
+                        
+                # Remove the node safely
+                if hasattr(animal.collision_np, 'isSingleton') and animal.collision_np.isSingleton():
+                    animal.collision_np.removeNode()
+                    
+                # Clean up the attribute
+                if hasattr(animal, 'collision_np'):
+                    delattr(animal, 'collision_np')
+            except Exception:
+                # Silent failure for safety - don't crash on cleanup issues
+                pass
 
     def add_projectile(self, projectile: 'Projectile'):
         """Add a projectile to collision detection."""
+        if projectile is None:
+            return
+            
         # Set up collision node and Python tag
         projectile.collision_node.setFromCollideMask(self.ANIMAL_MASK)
         projectile.collision_node.setIntoCollideMask(self.PROJECTILE_MASK)
@@ -116,10 +138,22 @@ class CollisionManager:
 
     def remove_projectile(self, projectile: 'Projectile'):
         """Remove a projectile from collision detection."""
-        if hasattr(projectile, 'collision_np'):
-            self.traverser.removeCollider(projectile.collision_np)
-            projectile.collision_np.removeNode()
-            delattr(projectile, 'collision_np')
+        if projectile is not None and hasattr(projectile, 'collision_np') and projectile.collision_np:
+            try:
+                # Try to remove from traverser safely
+                if hasattr(projectile.collision_np, 'parent') and projectile.collision_np.parent:
+                    self.traverser.removeCollider(projectile.collision_np)
+                    
+                # Remove the node safely
+                if hasattr(projectile.collision_np, 'isSingleton') and projectile.collision_np.isSingleton():
+                    projectile.collision_np.removeNode()
+                    
+                # Clean up the attribute
+                if hasattr(projectile, 'collision_np'):
+                    delattr(projectile, 'collision_np')
+            except Exception:
+                # Silent failure for safety - don't crash on cleanup issues
+                pass
 
     def add_hit_callback(self, callback: Callable[['Projectile', 'Animal'], None]):
         """Add a callback for when projectile hits are detected."""
