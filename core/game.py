@@ -397,7 +397,8 @@ class Game:
                 break
             x = random.uniform(-spawn_radius, spawn_radius)
             y = random.uniform(-spawn_radius, spawn_radius)
-            if x ** 2 + y ** 2 < 36:  # keep deer away from immediate spawn radius
+            # Use consistent exclusion radius based on spawn_radius configuration
+            if x ** 2 + y ** 2 < (spawn_radius * 0.2) ** 2:  # Keep animals away from spawn area (20% of spawn radius)
                 continue
             deer_positions.append((x, y))
         logging.info(f"Deer spawning completed with {len(deer_positions)} positions after {deer_spawn_attempts} attempts")
@@ -427,7 +428,8 @@ class Game:
                 break
             x = random.uniform(-spawn_radius, spawn_radius)
             y = random.uniform(-spawn_radius, spawn_radius)
-            if x ** 2 + y ** 2 < 9:
+            # Use consistent exclusion radius based on spawn_radius configuration
+            if x ** 2 + y ** 2 < (spawn_radius * 0.2) ** 2:  # Keep animals away from spawn area (20% of spawn radius)
                 continue
             rabbit_positions.append((x, y))
         logging.info(f"Rabbit spawning completed with {len(rabbit_positions)} positions after {rabbit_spawn_attempts} attempts")

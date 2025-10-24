@@ -35,12 +35,15 @@ class Projectile:
         if not self.active:
             return False
 
+        # Use epsilon for floating-point precision
+        EPSILON = 0.001
+        
         move_distance = self.speed * dt
         self.position += self.direction * move_distance
         self.distance_traveled += move_distance
 
-        # Check if projectile exceeded max range
-        if self.distance_traveled >= self.max_range:
+        # Check if projectile exceeded max range with epsilon for precision
+        if self.distance_traveled >= self.max_range - EPSILON:
             self.active = False
             return False
 
@@ -190,23 +193,40 @@ class CollisionManager:
             from_node_path = entry.getFromNodePath()
             into_node_path = entry.getIntoNodePath()
 
-            # Retrieve the Python objects from the tags
-            projectile = from_node_path.getPythonTag('projectile')
-            animal = into_node_path.getPythonTag('animal')
+            # Validate that we have proper NodePaths
+            if not from_node_path or not into_node_path:
+                continue
 
-            # Handle cases where from/into might be swapped
-            if not projectile or not animal:
+            # Retrieve the Python objects from the tags with type validation
+            projectile = None
+            animal = None
+            
+            # Try to get projectile from both from and into nodes
+            if from_node_path.hasPythonTag('projectile'):
+                projectile = from_node_path.getPythonTag('projectile')
+            elif into_node_path.hasPythonTag('projectile'):
                 projectile = into_node_path.getPythonTag('projectile')
+            
+            # Try to get animal from both from and into nodes
+            if from_node_path.hasPythonTag('animal'):
                 animal = from_node_path.getPythonTag('animal')
+            elif into_node_path.hasPythonTag('animal'):
+                animal = into_node_path.getPythonTag('animal')
 
-            # Check if it's a projectile hitting an animal
-            if projectile and animal:
-                if projectile.active and not animal.is_dead():
-                    # Process the hit
-                    self._process_hit(projectile, animal)
+            # Validate types before processing
+            if projectile is not None and animal is not None:
+                # Ensure projectile has required attributes
+                if (hasattr(projectile, 'active') and hasattr(projectile, 'damage') and
+                    hasattr(animal, 'is_dead') and callable(animal.is_dead)):
+                    
+                    # Check if it's a valid collision
+                    if projectile.active and not animal.is_dead():
+                        # Process the hit
+                        self._process_hit(projectile, animal)
 
-                    # Mark projectile as inactive
-                    projectile.active = False
+                        # Mark projectile as inactive
+                        if hasattr(projectile, 'active'):
+                            projectile.active = False
 
     def _process_hit(self, projectile: 'Projectile', animal: 'Animal'):
         """Process a projectile hitting an animal."""

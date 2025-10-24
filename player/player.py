@@ -27,10 +27,13 @@ class Weapon:
         self.reload_start_time = 0.0
 
     def can_shoot(self, current_time: float) -> bool:
-        """Check if weapon can shoot."""
+        """Check if weapon can shoot with epsilon for timing precision."""
         if self.reloading or self.current_ammo <= 0:
             return False
-        return current_time - self.last_shot_time >= self.fire_rate
+        
+        # Use epsilon for floating-point comparison
+        time_since_last_shot = current_time - self.last_shot_time
+        return time_since_last_shot >= self.fire_rate - 0.001
 
     def shoot(self, position: Point3, direction: Vec3, current_time: float) -> Optional[Projectile]:
         """Attempt to shoot. Returns projectile if successful."""
@@ -56,7 +59,9 @@ class Weapon:
         if not self.reloading:
             return False
 
-        if current_time - self.reload_start_time >= self.reload_time:
+        # Use epsilon for timing precision
+        time_elapsed = current_time - self.reload_start_time
+        if time_elapsed >= self.reload_time - 0.001:
             self.current_ammo = self.max_ammo
             self.reloading = False
             return True
@@ -314,17 +319,25 @@ class Player:
             self.weapon.reload(current_time)
 
     def update_projectiles(self, dt: float):
-        """Update all active projectiles."""
+        """Update all active projectiles with proper memory management."""
         active_projectiles = []
 
-        for projectile in self.projectiles:
-            if projectile.update(dt):
-                active_projectiles.append(projectile)
-            else:
-                # Remove from collision manager before cleanup
-                if self.collision_manager:
-                    self.collision_manager.remove_projectile(projectile)
-                projectile.cleanup()
+        for projectile in self.projectiles[:]:  # Iterate over copy to avoid modification during iteration
+            try:
+                if projectile.update(dt):
+                    active_projectiles.append(projectile)
+                else:
+                    # Remove from collision manager before cleanup
+                    if self.collision_manager and hasattr(self.collision_manager, 'remove_projectile'):
+                        self.collision_manager.remove_projectile(projectile)
+                    # Clean up projectile
+                    if hasattr(projectile, 'cleanup'):
+                        projectile.cleanup()
+                    # Clear reference
+                    projectile = None
+            except Exception:
+                # Skip problematic projectiles to prevent crashes
+                continue
 
         self.projectiles = active_projectiles
 
@@ -401,38 +414,57 @@ class Player:
 
     def cleanup(self):
         """Clean up player resources."""
+        # Remove mouse look task
         if hasattr(self.app, 'taskMgr'):
-            self.app.taskMgr.remove('mouse_look')
+            try:
+                self.app.taskMgr.remove('mouse_look')
+            except:
+                pass  # Task might not exist
 
+        # Clean up player model
         if self.model is not None:
-            self.model.removeNode()
+            try:
+                self.model.removeNode()
+                self.model = None
+            except:
+                pass  # Model might already be removed
 
         # Clean up projectiles
-        for projectile in self.projectiles:
-            if self.collision_manager:
-                self.collision_manager.remove_projectile(projectile)
-            projectile.cleanup()
+        for projectile in self.projectiles[:]:  # Iterate over copy to avoid modification during iteration
+            try:
+                if self.collision_manager:
+                    self.collision_manager.remove_projectile(projectile)
+                projectile.cleanup()
+            except:
+                pass  # Skip problematic projectiles
         self.projectiles.clear()
 
         # Clean up collision manager
         if self.collision_manager:
-            self.collision_manager.cleanup()
+            try:
+                self.collision_manager.cleanup()
+                self.collision_manager = None
+            except:
+                pass  # Collision manager might already be cleaned up
 
-    def cleanup(self):
-        """Clean up player resources."""
-        if hasattr(self.app, 'taskMgr'):
-            self.app.taskMgr.remove('mouse_look')
+        # Clean up collision nodes (if any)
+        if self.collision_np:
+            try:
+                self.collision_np.removeNode()
+                self.collision_np = None
+            except:
+                pass
 
-        if self.model is not None:
-            self.model.removeNode()
-
-        # Clean up projectiles
-        for projectile in self.projectiles:
-            if self.collision_manager:
-                self.collision_manager.remove_projectile(projectile)
-            projectile.cleanup()
-        self.projectiles.clear()
-
-        # Clean up collision manager
-        if self.collision_manager:
-            self.collision_manager.cleanup()
+        # Clean up collision traverser and handler
+        if self.collision_traverser:
+            try:
+                self.collision_traverser.clearColliders()
+                self.collision_traverser = None
+            except:
+                pass
+        if self.collision_handler:
+            try:
+                self.collision_handler.clear()
+                self.collision_handler = None
+            except:
+                pass

@@ -413,30 +413,30 @@ class TestSimpleSkyDomeGeometryValidation(unittest.TestCase):
             
             sky_dome._create_hemisphere(segments=4, rings=3)
             
-            // Should have written vertex data
+            # Should have written vertex data
             self.assertTrue(mock_writer.addData3.called)
 
     def test_texture_coordinate_generation(self):
         """Test that texture coordinates are properly generated."""
         sky_dome = SimpleSkyDome(MockApp(), radius=100.0)
         
-        // Test that texture coordinates are generated in proper range
+        # Test that texture coordinates are generated in proper range
         with patch('environment.simple_sky.GeomVertexWriter') as mock_writer_class:
             mock_writer = Mock()
             mock_writer_class.return_value = mock_writer
             
             sky_dome._create_hemisphere(segments=4, rings=3)
             
-            // Should have written texture coordinate data
+            # Should have written texture coordinate data
             self.assertTrue(mock_writer.addData2.called)
 
     def test_triangle_primitive_generation(self):
         """Test that triangle primitives are properly generated."""
-     sky_dome = SimpleSkyDome(MockApp(), radius=100.0)
+        sky_dome = SimpleSkyDome(MockApp(), radius=100.0)
         
-     # Test that geometry primitives are created correctly
-     with patch('environment.simple_sky.Geom') as mock_geom_class, \
-          patch('environment.simple_sky.GeomTriangles') as mock_tri_class:
+        # Test that geometry primitives are created correctly
+        with patch('environment.simple_sky.Geom') as mock_geom_class, \
+             patch('environment.simple_sky.GeomTriangles') as mock_tri_class:
             mock_geom = Mock()
             mock_geom_class.return_value = mock_geom
             
@@ -445,7 +445,7 @@ class TestSimpleSkyDomeGeometryValidation(unittest.TestCase):
             
             sky_dome._create_hemisphere(segments=4, rings=3)
             
-            // Should have added primitives to geometry
+            # Should have added primitives to geometry
             self.assertTrue(mock_geom.addPrimitive.called)
 
 if __name__ == '__main__':

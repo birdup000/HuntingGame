@@ -15,12 +15,52 @@ class MockVec3:
         self.x = x
         self.y = y
         self.z = z
+        
+    def length(self):
+        return (self.x**2 + self.y**2 + self.z**2)**0.5
+    
+    def normalize(self):
+        length = self.length()
+        if length > 0:
+            self.x /= length
+            self.y /= length
+            self.z /= length
+        return self
+    
+    def __add__(self, other):
+        return MockVec3(self.x + other.x, self.y + other.y, self.z + other.z)
+    
+    def __sub__(self, other):
+        return MockVec3(self.x - other.x, self.y - other.y, self.z - other.z)
+    
+    def __mul__(self, scalar):
+        return MockVec3(self.x * scalar, self.y * scalar, self.z * scalar)
 
 class MockPoint3:
     def __init__(self, x=0, y=0, z=0):
         self.x = x
         self.y = y
         self.z = z
+        
+    def length(self):
+        return (self.x**2 + self.y**2 + self.z**2)**0.5
+    
+    def normalize(self):
+        length = self.length()
+        if length > 0:
+            self.x /= length
+            self.y /= length
+            self.z /= length
+        return self
+    
+    def __add__(self, other):
+        return MockPoint3(self.x + other.x, self.y + other.y, self.z + other.z)
+    
+    def __sub__(self, other):
+        return MockPoint3(self.x - other.x, self.y - other.y, self.z + other.z)
+    
+    def __mul__(self, scalar):
+        return MockPoint3(self.x * scalar, self.y * scalar, self.z * scalar)
 
 class MockNodePath:
     def __init__(self, name="test"):
