@@ -50,6 +50,7 @@ class Game:
             self.game_time = 0.0
             self.sky = None
             self.rocks = []
+            self.decor_manager = None
             self.animal_targets: Dict[str, int] = {}
             self._pending_objective_counts: Dict[str, int] = {}
             self._last_reported_objective_counts: Optional[Dict[str, int]] = None
@@ -624,7 +625,7 @@ class Game:
                     self.app.openPointer(1)  # Show cursor
                 elif hasattr(self.app, 'win') and hasattr(self.app.win, 'request_properties'):
                     props = self.app.win.get_properties()
-                    props.set_cursor()
+                    props.set_cursor_hidden(False)
                     self.app.win.request_properties(props)
             except Exception as e:
                 logging.warning(f"Failed to show cursor: {e}")
@@ -638,7 +639,7 @@ class Game:
         
             # Show main menu
             if self.ui_manager:
-                self.ui.game_menu('main')
+                self.ui_manager.show_menu('main')
                 self.ui_manager.toggle_hud_visibility(False)
                 logging.info("Main menu shown")
             else:
@@ -875,7 +876,11 @@ class Game:
 
             # Calculate delta time
             try:
-                current_time = self.app.taskMgr.global_clock.getFrameTime()
+                if hasattr(self.app.taskMgr, 'globalClock'):
+                    current_time = self.app.taskMgr.globalClock.getFrameTime()
+                else:
+                    current_time = self.app.taskMgr.global_clock.getFrameTime()
+                    
                 if self.last_time == 0:
                     dt = 0.016  # Default 60 FPS
                 else:
@@ -935,7 +940,7 @@ class Game:
                                 animal.cleanup()
                             continue
 
-                    self.animals = alive_animal
+                    self.animals = alive_animals
                     self._sync_hud_objectives()
 
                 except Exception as e:
@@ -970,7 +975,7 @@ class Game:
             if self.dynamic_lighting:
                 # Simulate time progression (1 minute = 1 real second)
                 virtual_hour = (self.game_time * 0.016) % 24
-                self.dynamic_lighting.update_time_of_day(virtual_time)
+                self.dynamic_lighting.update_time_of_day(virtual_hour)
             else:
                 logging.debug("Dynamic lighting not available")
 
@@ -987,8 +992,11 @@ class Game:
                 rain_intensity = precipitation.intensity if precipitation else 0
 
                 fog_effect = getattr(self.weather_system, 'fog', None)
-                fog_density = fog_effect.density if fog_effect else 0
-                self.dynamic
+                fog_density = getattr(fog_effect, 'density', 0) if fog_effect else 0
+                
+                # Apply weather effects to lighting
+                if hasattr(self.dynamic_lighting, 'apply_weather_effects'):
+                    self.dynamic_lighting.apply_weather_effects(rain_intensity, fog_density)
                 
         except Exception as e:
             logging.error(f"Error updating graphics systems: {e}")

@@ -229,6 +229,9 @@ class Player:
         # Inventory and weapon system
         self.inventory = Inventory()
         
+        # Projectile list
+        self.projectiles: List[Projectile] = []
+        
         # Add default weapons
         rifle = Weapon("Hunting Rifle", fire_rate=0.5, damage=25.0, projectile_speed=150.0, max_ammo=10, weapon_type="rifle")
         pistol = Weapon("Pistol", fire_rate=0.2, damage=15.0, projectile_speed=120.0, max_ammo=15, weapon_type="pistol")

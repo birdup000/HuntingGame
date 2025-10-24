@@ -88,6 +88,9 @@ class CollisionManager:
         # Hit callbacks
         self.hit_callbacks: List[Callable[['Projectile', 'Animal'], None]] = []
         
+        # Reference to game for context
+        self.game = None
+        
         # Performance tracking
         self.collision_checks = 0
         self.collision_hits = 0
@@ -170,7 +173,7 @@ class CollisionManager:
             
             # Attach to render and set Python tag
             if hasattr(self.app, 'render'):
-                projectile.collision_np = self.app.render.attachNode(collision_node)
+                projectile.collision_np = self.app.render.attachNewNode(collision_node)
                 projectile.collision_np.setPythonTag('projectile', projectile)
                 self.traverser.addCollider(projectile.collision_np, self.handler)
                 
@@ -280,6 +283,18 @@ class CollisionManager:
         except Exception as e:
             logging.error(f"Collision processing error: {e}")
             raise
+
+    def add_hit_callback(self, callback: Callable[['Projectile', 'Animal'], None]):
+        """Add a callback function to be called when a projectile hits an animal."""
+        if callback not in self.hit_callbacks:
+            self.hit_callbacks.append(callback)
+            logging.debug(f"Added hit callback: {callback.__name__ if hasattr(callback, '__name__') else 'anonymous'}")
+
+    def remove_hit_callback(self, callback: Callable[['Projectile', 'Animal'], None]):
+        """Remove a hit callback function."""
+        if callback in self.hit_callbacks:
+            self.hit_callbacks.remove(callback)
+            logging.debug(f"Removed hit callback: {callback.__name__ if hasattr(callback, '__name__') else 'anonymous'}")
 
     def cleanup(self):
         """Clean up collision manager resources."""
