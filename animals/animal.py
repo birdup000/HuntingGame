@@ -31,6 +31,9 @@ class AnimalState(Enum):
     FORAGING = "foraging"
     FLEEING = "fleeing"
     ALERTED = "alerted"
+    HUNGRY = "hungry"
+    DRINKING = "drinking"
+    RESTING = "resting"
     DEAD = "dead"
 
 
@@ -63,6 +66,27 @@ class Animal(ABC):
         self.tracks: list[NodePath] = []
         self.track_spacing = 1.6
         self._distance_since_track = 0.0
+        
+        # Advanced AI attributes
+        self.hunger = 100.0  # Hunger level (0-100)
+        self.thirst = 100.0  # Thirst level (0-100)
+        self.energy = 100.0  # Energy level (0-100)
+        self.max_hunger = 100.0
+        self.max_thirst = 100.0
+        self.max_energy = 100.0
+        self.hunger_depletion_rate = 0.5  # Per second
+        self.thirst_depletion_rate = 0.3  # Per second
+        self.energy_depletion_rate = 0.2  # Per second
+        self.hunger_threshold = 30.0  # When to seek food
+        self.thirst_threshold = 20.0  # When to seek water
+        self.energy_threshold = 20.0  # When to rest
+        self.preferred_food_distance = 15.0  # Distance to food sources
+        self.preferred_water_distance = 10.0  # Distance to water sources
+        self.memory_duration = 10.0  # How long to remember player position
+        self.last_player_position: Optional[Vec3] = None
+        self.last_player_time = 0.0
+        self.social_distance = 5.0  # Distance to other animals
+        self.group_formation = []  # Nearby animals
 
     @abstractmethod
     def create_model(self) -> Union[GeomNode, NodePath]:
@@ -255,14 +279,19 @@ class Animal(ABC):
 
         return False
 
-    def update(self, dt: float, player_position: Vec3, terrain_height: float = 0.0):
+    def update(self, dt: float, player_position: Vec3, terrain_height: float = 0.0,
+               food_positions: list[Vec3] = None, water_positions: list[Vec3] = None,
+               nearby_animals: list['Animal'] = None):
         """
-        Update animal state and behavior.
+        Update animal state and behavior with advanced AI.
 
         Args:
             dt: Time delta since last update
             player_position: Current player position
             terrain_height: Height of terrain at current position
+            food_positions: List of food source positions
+            water_positions: List of water source positions
+            nearby_animals: List of nearby animals for social behavior
         """
         # Dead animals don't update
         if self.state == AnimalState.DEAD:
@@ -270,84 +299,284 @@ class Animal(ABC):
 
         self.state_timer += dt
 
-        # Store player position for fleeing behavior
-        self._last_player_position = player_position
-        self._last_terrain_height = terrain_height
+        # Update basic needs (hunger, thirst, energy)
+        self._update_basic_needs(dt)
+
+        # Update memory of player position
+        self._update_player_memory(player_position, dt)
 
         # Check for player detection
         if self.detect_player(player_position):
             self.state = AnimalState.FLEEING
             self.state_timer = 0.0
         elif self.state_timer >= self.state_duration:
-            # Change state randomly
-            self._change_state()
+            # Change state based on needs and conditions
+            self._change_state(food_positions, water_positions, nearby_animals)
 
         # Update position based on current state
-        self._update_movement(dt)
+        self._update_movement(dt, food_positions, water_positions, nearby_animals)
 
         # Update node position if rendered
         if self.node:
             # Always ensure animal is properly positioned above terrain
             self.position.setZ(terrain_height + self.height_offset)
-                
+                 
             self.node.setPos(self.position)
             self._distance_since_track += self.velocity.length() * dt
             if self._distance_since_track >= self.track_spacing:
                 self._distance_since_track = 0.0
                 self._leave_track(terrain_height)
 
-    def _change_state(self):
-        """Randomly change to a new state."""
+    def _change_state(self, food_positions: list[Vec3] = None, water_positions: list[Vec3] = None,
+                     nearby_animals: list['Animal'] = None):
+        """Change state based on needs, environment, and social behavior."""
         # Don't change state if dead
         if self.state == AnimalState.DEAD:
             return
 
-        self.state = random.choice([AnimalState.IDLE, AnimalState.FORAGING])
-        self.state_timer = 0.0
-        self.state_duration = random.uniform(2.0, 5.0)
+        # Determine priority needs
+        needs = []
+        if self.hunger < self.hunger_threshold:
+            needs.append(('hunger', AnimalState.HUNGRY))
+        if self.thirst < self.thirst_threshold:
+            needs.append(('thirst', AnimalState.DRINKING))
+        if self.energy < self.energy_threshold:
+            needs.append(('energy', AnimalState.RESTING))
 
-        # Set new target for foraging
-        if self.state == AnimalState.FORAGING:
-            angle = random.uniform(0, 2 * math.pi)
-            distance = random.uniform(5.0, 20.0)
-            # Keep target at same z-level for terrain following
-            self.target_position = Vec3(
-                self.position.x + math.cos(angle) * distance,
-                self.position.y + math.sin(angle) * distance,
-                self.position.z
-            )
+        # Social behavior - group with other animals
+        if nearby_animals and len(nearby_animals) > 1:
+            avg_position = Vec3(0, 0, 0)
+            for animal in nearby_animals:
+                if animal != self and animal.state != AnimalState.DEAD:
+                    avg_position += animal.position
+            avg_position /= len(nearby_animals)
+            distance_to_group = (avg_position - self.position).length()
+            if distance_to_group > self.social_distance:
+                needs.append(('social', AnimalState.IDLE))
+
+        # Choose state based on priority needs
+        if needs:
+            # Prioritize hunger over thirst over energy over social
+            priority_order = ['hunger', 'thirst', 'energy', 'social']
+            for need_type, state in needs:
+                if need_type in priority_order:
+                    self.state = state
+                    self.state_timer = 0.0
+                    self.state_duration = random.uniform(2.0, 5.0)
+                    
+                    # Set target based on need
+                    if state == AnimalState.HUNGRY and food_positions:
+                        self._set_food_target(food_positions)
+                    elif state == AnimalState.DRINKING and water_positions:
+                        self._set_water_target(water_positions)
+                    elif state == AnimalState.RESTING:
+                        self._set_rest_target()
+                    elif state == AnimalState.IDLE:
+                        self._set_social_target(avg_position)
+                    break
+            return
+
+        # Default behavior - foraging or idle
+        if random.random() < 0.7:  # 70% chance to forage
+            self.state = AnimalState.FORAGING
+            self.state_timer = 0.0
+            self.state_duration = random.uniform(2.0, 5.0)
+            self._set_foraging_target()
+        else:
+            self.state = AnimalState.IDLE
+            self.state_timer = 0.0
+            self.state_duration = random.uniform(3.0, 7.0)
+
+    def _update_basic_needs(self, dt: float):
+        """Update hunger, thirst, and energy levels."""
+        # Deplete needs over time
+        self.hunger = max(0.0, self.hunger - self.hunger_depletion_rate * dt)
+        self.thirst = max(0.0, self.thirst - self.thirst_depletion_rate * dt)
+        self.energy = max(0.0, self.energy - self.energy_depletion_rate * dt)
+        
+        # Consume energy when moving
+        if self.velocity.lengthSquared() > 0.01:
+            energy_consumption = self.velocity.length() * 0.1 * dt
+            self.energy = max(0.0, self.energy - energy_consumption)
+
+    def _update_player_memory(self, player_position: Vec3, dt: float):
+        """Update memory of player position for later use."""
+        if self.detect_player(player_position):
+            self.last_player_position = player_position
+            self.last_player_time = 0.0
+        else:
+            self.last_player_time += dt
+            # Forget player position after memory duration
+            if self.last_player_time > self.memory_duration:
+                self.last_player_position = None
+
+    def _set_food_target(self, food_positions: list[Vec3]):
+        """Set target position for finding food."""
+        if food_positions:
+            # Find closest food source
+            closest_food = min(food_positions, key=lambda pos: (pos - self.position).length())
+            distance = (closest_food - self.position).length()
+            
+            if distance <= self.preferred_food_distance:
+                # Food is nearby, stop moving
+                self.target_position = None
+                # Restore some hunger when near food
+                self.hunger = min(self.max_hunger, self.hunger + 10.0)
+            else:
+                # Move towards food
+                direction = (closest_food - self.position).normalized()
+                self.target_position = self.position + direction * min(distance, 20.0)
+
+    def _set_water_target(self, water_positions: list[Vec3]):
+        """Set target position for finding water."""
+        if water_positions:
+            # Find closest water source
+            closest_water = min(water_positions, key=lambda pos: (pos - self.position).length())
+            distance = (closest_water - self.position).length()
+            
+            if distance <= self.preferred_water_distance:
+                # Water is nearby, stop moving
+                self.target_position = None
+                # Restore some thirst when near water
+                self.thirst = min(self.max_thirst, self.thirst + 15.0)
+            else:
+                # Move towards water
+                direction = (closest_water - self.position).normalized()
+                self.target_position = self.position + direction * min(distance, 15.0)
+
+    def _set_rest_target(self):
+        """Set target position for resting."""
+        # Find a quiet spot to rest
+        angle = random.uniform(0, 2 * math.pi)
+        distance = random.uniform(3.0, 8.0)
+        self.target_position = Vec3(
+            self.position.x + math.cos(angle) * distance,
+            self.position.y + math.sin(angle) * distance,
+            self.position.z
+        )
+
+    def _set_social_target(self, group_position: Vec3):
+        """Set target position for social behavior."""
+        # Move towards group
+        direction = (group_position - self.position).normalized()
+        distance = min((group_position - self.position).length(), self.social_distance * 2)
+        self.target_position = self.position + direction * distance
+
+    def _set_foraging_target(self):
+        """Set target position for foraging behavior."""
+        angle = random.uniform(0, 2 * math.pi)
+        distance = random.uniform(5.0, 20.0)
+        # Keep target at same z-level for terrain following
+        self.target_position = Vec3(
+            self.position.x + math.cos(angle) * distance,
+            self.position.y + math.sin(angle) * distance,
+            self.position.z
+        )
 
     def is_dead(self) -> bool:
         """Check if the animal is dead."""
         return self.state == AnimalState.DEAD
 
-    def _update_movement(self, dt: float):
-        """Update animal movement based on current state."""
+    def _update_movement(self, dt: float, food_positions: list[Vec3] = None,
+                        water_positions: list[Vec3] = None, nearby_animals: list['Animal'] = None):
+        """Update animal movement based on current state with advanced AI."""
         if self.state == AnimalState.DEAD:
             # Dead animals don't move
             self.velocity = Vec3(0, 0, 0)
             return
 
-        elif self.state == AnimalState.FLEEING:
-            # Move away from player with more realistic fleeing behavior
-            self.speed = 10.0  # Faster when fleeing
+        # Adjust speed based on energy level
+        energy_factor = max(0.3, self.energy / self.max_energy)  # Minimum 30% speed
+        base_speed = self.speed * energy_factor
 
+        if self.state == AnimalState.FLEEING:
+            # Move away from player with more realistic fleeing behavior
+            flee_speed = 12.0 * energy_factor  # Faster when fleeing, but limited by energy
+            
             # Calculate flee direction (away from player)
-            if hasattr(self, '_last_player_position'):
+            flee_direction = Vec3(0, 0, 0)
+            if self.last_player_position:
+                flee_direction = self.position - self.last_player_position
+            elif hasattr(self, '_last_player_position'):
                 flee_direction = self.position - self._last_player_position
-                if flee_direction.length() > 0:
-                    flee_direction.normalize()
-                    # Add some randomness to make fleeing less predictable
-                    random_offset = Vec3(random.uniform(-0.5, 0.5), random.uniform(-0.5, 0.5), 0)
-                    flee_direction += random_offset
-                    flee_direction.normalize()
-                    self.velocity = flee_direction * self.speed
-                else:
-                    # Fallback random direction
-                    self.velocity = Vec3(random.uniform(-1, 1), random.uniform(-1, 1), 0).normalized() * self.speed
+                
+            if flee_direction.length() > 0:
+                flee_direction.normalize()
+                # Add some randomness to make fleeing less predictable
+                random_offset = Vec3(random.uniform(-0.3, 0.3), random.uniform(-0.3, 0.3), 0)
+                flee_direction += random_offset
+                flee_direction.normalize()
+                self.velocity = flee_direction * flee_speed
             else:
-                # No player position known, use random direction
-                self.velocity = Vec3(random.uniform(-1, 1), random.uniform(-1, 1), 0).normalized() * self.speed
+                # Fallback random direction
+                self.velocity = Vec3(random.uniform(-1, 1), random.uniform(-1, 1), 0).normalized() * flee_speed
+
+        elif self.state == AnimalState.HUNGRY:
+            if self.target_position:
+                direction = self.target_position - self.position
+                if direction.length() < 1.0:
+                    # Reached food target, stop moving
+                    self.velocity = Vec3(0, 0, 0)
+                    self.target_position = None
+                    # Restore some hunger when at food
+                    self.hunger = min(self.max_hunger, self.hunger + 20.0)
+                else:
+                    self.velocity = direction.normalized() * base_speed
+            else:
+                # No food target, wander randomly
+                self.velocity = Vec3(random.uniform(-1, 1), random.uniform(-1, 1), 0).normalized() * base_speed
+
+        elif self.state == AnimalState.DRINKING:
+            if self.target_position:
+                direction = self.target_position - self.position
+                if direction.length() < 1.0:
+                    # Reached water target, stop moving
+                    self.velocity = Vec3(0, 0, 0)
+                    self.target_position = None
+                    # Restore some thirst when at water
+                    self.thirst = min(self.max_thirst, self.thirst + 25.0)
+                else:
+                    self.velocity = direction.normalized() * base_speed
+            else:
+                # No water target, wander randomly
+                self.velocity = Vec3(random.uniform(-1, 1), random.uniform(-1, 1), 0).normalized() * base_speed
+
+        elif self.state == AnimalState.RESTING:
+            if self.target_position:
+                direction = self.target_position - self.position
+                if direction.length() < 1.0:
+                    # Reached rest target, stop moving and recover energy
+                    self.velocity = Vec3(0, 0, 0)
+                    self.target_position = None
+                    # Restore some energy while resting
+                    self.energy = min(self.max_energy, self.energy + 5.0 * dt)
+                else:
+                    self.velocity = direction.normalized() * base_speed * 0.5  # Slow movement to rest spot
+            else:
+                # Already resting, no movement
+                self.velocity = Vec3(0, 0, 0)
+
+        elif self.state == AnimalState.IDLE:
+            # Social behavior - move towards group if nearby animals
+            if nearby_animals and len(nearby_animals) > 1:
+                avg_position = Vec3(0, 0, 0)
+                count = 0
+                for animal in nearby_animals:
+                    if animal != self and animal.state != AnimalState.DEAD:
+                        avg_position += animal.position
+                        count += 1
+                if count > 0:
+                    group_target = avg_position / count
+                    direction = group_target - self.position
+                    if direction.length() > self.social_distance:
+                        self.velocity = direction.normalized() * base_speed * 0.3  # Slow social movement
+                    else:
+                        self.velocity = Vec3(0, 0, 0)
+                else:
+                    self.velocity = Vec3(0, 0, 0)
+            else:
+                # No social group, idle behavior
+                self.velocity = Vec3(0, 0, 0)
 
         elif self.state == AnimalState.FORAGING:
             if self.target_position:
@@ -357,13 +586,9 @@ class Animal(ABC):
                     self.velocity = Vec3(0, 0, 0)
                     self.target_position = None
                 else:
-                    self.velocity = direction.normalized() * self.speed
+                    self.velocity = direction.normalized() * base_speed
             else:
                 self.velocity = Vec3(0, 0, 0)
-
-        elif self.state == AnimalState.IDLE:
-            self.velocity = Vec3(0, 0, 0)
-            self.speed = 5.0  # Normal speed
 
         # Update position
         self.position += self.velocity * dt
@@ -374,7 +599,7 @@ class Animal(ABC):
             current_ground = self._last_ground_height
         else:
             current_ground = 0  # Fallback
-            
+        
         # Store position for terrain queries
         self._last_position = Vec3(self.position.x, self.position.y, 0)
         self._last_ground_height = current_ground
@@ -403,7 +628,7 @@ class Animal(ABC):
             oldest.removeNode()
 
     def take_damage(self, damage: float):
-        """Apply damage to the animal."""
+        """Apply damage to the animal with realistic injury response."""
         if self.state == AnimalState.DEAD:
             return  # Can't damage a dead animal
 
@@ -418,7 +643,18 @@ class Animal(ABC):
                 self.node.setH(self.node.getH() + 90)  # Rotate to fall over
                 self.node.setZ(self.node.getZ() - 0.5)  # Lower to ground
         else:
-            # Injured but not dead - increase flee behavior
+            # Injured but not dead - realistic injury response
+            injury_severity = 1.0 - (self.health / 100.0)
+            
+            # Reduce energy based on injury severity
+            energy_loss = min(30.0, injury_severity * 50.0)
+            self.energy = max(0.0, self.energy - energy_loss)
+            
+            # Increase hunger and thirst due to stress
+            self.hunger = max(0.0, self.hunger - injury_severity * 15.0)
+            self.thirst = max(0.0, self.thirst - injury_severity * 10.0)
+            
+            # Flee if not already doing so
             if self.state != AnimalState.FLEEING:
                 self.state = AnimalState.FLEEING
                 self.state_timer = 0.0
