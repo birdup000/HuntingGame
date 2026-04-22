@@ -339,16 +339,14 @@ class OptimizedTerrainRenderer:
         
     def update_lod(self, camera_pos):
         """Update level of detail based on camera distance."""
+        # LOD switching simplified — hide distant terrain zones
         for terrain in self.active_terrains:
             for zone in terrain.material_zones.values():
                 dist = (zone['center'] - camera_pos).length()
-                lod = min(int(dist / 50), self.detail_levels - 1)
-                zone['node'].setEffect(LodEffect.make(
-                    10 * lod,  # Switch distance
-                    50 * lod,  # Fade start
-                    100 * lod,  # Fade end
-                    LodEffect.MAlpha
-                ))
+                if dist > 400:
+                    zone['node'].hide()
+                else:
+                    zone['node'].show()
     
     def cull_terrain(self, camera_frustum):
         """Cull terrain outside camera view."""

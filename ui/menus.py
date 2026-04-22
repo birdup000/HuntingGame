@@ -500,30 +500,32 @@ class BaseMenu:
 class MainMenu(BaseMenu):
     """Main menu screen for the game."""
 
-    def __init__(self, app, on_start_game: Callable, on_settings: Callable, on_quit: Callable):
+    def __init__(self, app, on_start_game: Callable, on_settings: Callable, on_quit: Callable, on_set_difficulty: Callable = None):
         super().__init__(app, "3D Hunting Simulator")
         self.on_start_game = on_start_game
         self.on_settings = on_settings
         self.on_quit = on_quit
+        self.on_set_difficulty = on_set_difficulty
         self.button_panel = None
+        self.difficulty_label = None
 
         self.create_main_menu()
 
     def create_main_menu(self):
         """Create the main menu layout with clear hierarchy and readability."""
-        self.create_frame(2.3, 1.6, frame_color=(0.0, 0.0, 0.0, 0.0))
+        self.create_frame(2.3, 1.8, frame_color=(0.0, 0.0, 0.0, 0.0))
 
         self.add_title(
             "3D HUNTING SIMULATOR",
             scale=0.27,
-            pos=(0, 0, 0.78),
+            pos=(0, 0, 0.88),
             parent=self.frame,
             fg=(0.97, 0.92, 0.8, 1.0)
         )
 
         self.add_label(
             "Experience the thrill of the hunt",
-            pos=(0, 0, 0.6),
+            pos=(0, 0, 0.7),
             scale=0.1,
             parent=self.frame,
             fg=(0.9, 0.85, 0.76, 1.0)
@@ -533,14 +535,14 @@ class MainMenu(BaseMenu):
             parent=self.frame,
             frameColor=(0.78, 0.58, 0.26, 0.82),
             frameSize=(-0.45, 0.45, -0.01, 0.01),
-            pos=(0, 0, 0.52)
+            pos=(0, 0, 0.62)
         )
         accent_bar.setTransparency(TransparencyAttrib.MAlpha)
 
         self.button_panel = DirectFrame(
             parent=self.frame,
             frameColor=(0.08, 0.13, 0.09, 0.78),
-            frameSize=(-0.8, 0.8, -0.55, 0.25),
+            frameSize=(-0.8, 0.8, -0.65, 0.25),
             pos=(0, 0, -0.05),
             borderWidth=(0.02, 0.02)
         )
@@ -549,10 +551,47 @@ class MainMenu(BaseMenu):
         y_start = 0.12
         button_spacing = 0.24
 
+        # Difficulty selection row
+        self.add_label(
+            "Difficulty:",
+            pos=(0, 0, y_start + 0.18),
+            scale=0.07,
+            parent=self.button_panel,
+            fg=(0.85, 0.8, 0.7, 1.0)
+        )
+
+        diff_y = y_start + 0.08
+        diff_spacing = 0.28
+        diff_colors = {
+            'easy': (0.2, 0.5, 0.2, 0.9),
+            'normal': (0.4, 0.4, 0.2, 0.9),
+            'hard': (0.5, 0.2, 0.2, 0.9)
+        }
+
+        def make_diff_btn(text, diff_key, x_pos):
+            def _set_diff():
+                if self.on_set_difficulty:
+                    self.on_set_difficulty(diff_key)
+                self._update_difficulty_label(diff_key)
+            btn = self.add_button(
+                text, _set_diff,
+                pos=(x_pos, 0, diff_y),
+                scale=0.08,
+                parent=self.button_panel
+            )
+            btn['frameColor'] = diff_colors.get(diff_key, self.button_color)
+            return btn
+
+        self._diff_easy = make_diff_btn("Easy", 'easy', -0.3)
+        self._diff_normal = make_diff_btn("Normal", 'normal', 0.0)
+        self._diff_hard = make_diff_btn("Hard", 'hard', 0.3)
+        self._selected_diff = 'normal'
+        self._update_difficulty_label('normal')
+
         self.add_button(
             "Start Game",
             self.on_start_game,
-            pos=(0, 0, y_start),
+            pos=(0, 0, y_start - 0.1),
             scale=0.125,
             is_primary=True,
             parent=self.button_panel
@@ -561,7 +600,7 @@ class MainMenu(BaseMenu):
         self.add_button(
             "Settings",
             self.on_settings,
-            pos=(0, 0, y_start - button_spacing),
+            pos=(0, 0, y_start - button_spacing - 0.1),
             scale=0.12,
             parent=self.button_panel
         )
@@ -569,10 +608,22 @@ class MainMenu(BaseMenu):
         self.add_button(
             "Quit Game",
             self.on_quit,
-            pos=(0, 0, y_start - (2 * button_spacing)),
+            pos=(0, 0, y_start - (2 * button_spacing) - 0.1),
             scale=0.12,
             parent=self.button_panel
         )
+
+    def _update_difficulty_label(self, difficulty: str):
+        """Visually highlight the selected difficulty button."""
+        self._selected_diff = difficulty
+        for btn, key in [(self._diff_easy, 'easy'), (self._diff_normal, 'normal'), (self._diff_hard, 'hard')]:
+            if btn:
+                if key == difficulty:
+                    btn['frameColor'] = (0.6, 0.55, 0.3, 1.0)
+                    btn['text_fg'] = (1.0, 1.0, 0.9, 1.0)
+                else:
+                    btn['frameColor'] = self.button_color
+                    btn['text_fg'] = self.text_color
 
         left, right, bottom, _top = self._get_fullscreen_frame_size()
         version_x = right - 0.35
@@ -910,7 +961,8 @@ class UIManager:
             self.app,
             callbacks.get('start_game', lambda: None),
             callbacks.get('settings', lambda: None),
-            callbacks.get('quit', lambda: None)
+            callbacks.get('quit', lambda: None),
+            callbacks.get('set_difficulty', None)
         )
 
         self.pause_menu = PauseMenu(

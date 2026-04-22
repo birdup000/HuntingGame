@@ -67,6 +67,8 @@ class Game:
             self._objective_initialized = False
             self.difficulty = 'normal'
             self._auto_save_timer = 0.0
+            self._animal_respawn_timer = 0.0
+            self._animal_respawn_interval = 45.0  # Respawn animals every 45 seconds
             
             # Initialize save manager
             try:
@@ -239,6 +241,14 @@ class Game:
                     logging.info("Player position adjusted to terrain")
                 except Exception as e:
                     logging.warning(f"Failed to adjust player to terrain: {e}")
+
+            # Override player's projectile hit callback for visual feedback
+            if self.player and self.player.collision_manager:
+                try:
+                    self.player.collision_manager.add_hit_callback(self.on_projectile_hit)
+                    logging.info("Projectile hit callback registered")
+                except Exception as e:
+                    logging.warning(f"Failed to register hit callback: {e}")
 
             # Set up input handling for UI
             try:
@@ -470,6 +480,7 @@ class Game:
                 'restart': self.restart_game,
                 'main_menu': self.show_main_menu,
                 'back_to_main': self.show_main_menu,
+                'set_difficulty': self.set_difficulty,
                 'settings_data': {  # Default settings data
                     'volume': 0.8,
                     'sensitivity': 0.2,
@@ -966,8 +977,24 @@ class Game:
                 try:
                     if self.player:
                         self.player.update(dt)
+                        self.player._update_wind(dt)
                 except Exception as e:
                     logging.error(f"Error updating player: {e}")
+
+                # Tutorial hints for new players
+                try:
+                    self._update_tutorial(dt)
+                except Exception:
+                    pass
+
+                # Apply settings sensitivity to player mouse
+                try:
+                    if self.ui_manager and self.ui_manager.settings_menu and self.player:
+                        sens = self.ui_manager.settings_menu.settings.get('sensitivity')
+                        if sens is not None and abs(self.player.mouse_sensitivity - sens) > 0.001:
+                            self.player.mouse_sensitivity = sens
+                except Exception:
+                    pass
 
                 # Update animals
                 try:
@@ -1031,7 +1058,7 @@ class Game:
                         weather_strength = 0.0
                         if self.weather_system:
                             weather_type = getattr(self.weather_system, 'current_weather', 'clear')
-                            weather_strength = getattr(self.weather_system, 'transition_progress', 0.0)
+                            weather_strength = getattr(self.weather_system, 'weather_strength', 0.0)
                         self.audio_manager.update(dt, self.player.position, is_moving, self.player.is_sprinting, weather_type, weather_strength)
                 except Exception as e:
                     logging.debug(f"Audio update error: {e}")
@@ -1048,10 +1075,19 @@ class Game:
 
                 # Check for game over conditions (e.g., player health)
                 try:
-                    if self.player and hasattr(self.player, 'health') and self.player.health <= 0.001:  # Use small epsilon for float comparison
+                    if self.player and hasattr(self.player, 'health') and self.player.health <= 0:
                         self.game_over()
                 except Exception as e:
                     logging.error(f"Error checking game over conditions: {e}")
+
+                # Animal respawn system - keep the world populated
+                try:
+                    self._animal_respawn_timer += dt
+                    if self._animal_respawn_timer >= self._animal_respawn_interval:
+                        self._animal_respawn_timer = 0.0
+                        self._respawn_animals_if_needed()
+                except Exception as e:
+                    logging.debug(f"Animal respawn error: {e}")
 
             # Update UI regardless of game state
             try:
@@ -1088,15 +1124,12 @@ class Game:
             # Adjust lighting for current weather
             if self.dynamic_lighting and self.weather_system:
                 # Get weather intensities safely
-                precipitation = getattr(self.weather_system, 'precipitation', None)
-                rain_intensity = precipitation.intensity if precipitation else 0
-
-                fog_effect = getattr(self.weather_system, 'fog', None)
-                fog_density = getattr(fog_effect, 'density', 0) if fog_effect else 0
+                rain_intensity = getattr(self.weather_system, 'weather_strength', 0.0) if self.weather_system.current_weather in ('rain', 'storm') else 0.0
+                fog_density = getattr(self.weather_system, 'weather_strength', 0.0) if self.weather_system.current_weather in ('fog', 'rain', 'snow') else 0.0
                 
                 # Apply weather effects to lighting
-                if hasattr(self.dynamic_lighting, 'apply_weather_effects'):
-                    self.dynamic_lighting.apply_weather_effects(rain_intensity, fog_density)
+                if hasattr(self.dynamic_lighting, 'adjust_for_weather'):
+                    self.dynamic_lighting.adjust_for_weather(rain_intensity, fog_density)
                 
         except Exception as e:
             logging.error(f"Error updating graphics systems: {e}")
@@ -1181,20 +1214,26 @@ class Game:
         if self.ui_manager and self.ui_manager.hud and animal:
             # Award points based on animal type
             points = 10  # Base points
+            xp_gain = 10  # Base XP
             species = getattr(animal, 'species', None)
             
             if species and isinstance(species, str):
                 species_lower = species.lower()
                 if species_lower == 'deer':
                     points = 50
+                    xp_gain = 40
                 elif species_lower == 'rabbit':
                     points = 25
+                    xp_gain = 20
                 elif species_lower == 'bear':
                     points = 150
+                    xp_gain = 100
                 elif species_lower == 'wolf':
                     points = 100
+                    xp_gain = 60
                 elif species_lower == 'bird':
                     points = 15
+                    xp_gain = 10
             
             # Apply difficulty score multiplier
             diff_cfg = config.DIFFICULTY_CONFIG.get(self.difficulty, {})
@@ -1204,11 +1243,15 @@ class Game:
             self.ui_manager.record_shot(hit=True)
             self.ui_manager.hud.register_animal_kill(species if isinstance(species, str) else '')
             
+            # Grant XP to player
+            if self.player:
+                self.player.gain_experience(xp_gain)
+            
             species_name = getattr(animal, 'species', 'Animal')
             if species_name and hasattr(animal, 'species'):
-                self.ui_manager.show_message(f"{species_name} killed! +{points} points", 2.0)
+                self.ui_manager.show_message(f"{species_name} killed! +{points} pts  +{xp_gain} XP", 2.0)
             else:
-                self.ui_manager.show_message(f"Animal killed! +{points} points", 2.0)
+                self.ui_manager.show_message(f"Animal killed! +{points} pts", 2.0)
             
             # Play death sound
             try:
@@ -1216,6 +1259,134 @@ class Game:
                     self.audio_manager.play_death(animal.position)
             except Exception:
                 pass
+
+    def _respawn_animals_if_needed(self):
+        """Respawn animals if populations are low to keep the world alive."""
+        if not self.terrain:
+            return
+        animal_cfg = config.ANIMAL_CONFIG
+        spawn_radius = animal_cfg['spawn_radius']
+        
+        # Count current animals by species
+        current_counts = {}
+        for animal in self.animals:
+            if not animal.is_dead():
+                species = getattr(animal, 'species', 'unknown')
+                current_counts[species] = current_counts.get(species, 0) + 1
+        
+        # Spawn missing animals
+        species_map = {
+            'deer': (Deer, animal_cfg['deer_count']),
+            'rabbit': (Rabbit, animal_cfg['rabbit_count']),
+            'bear': (Bear, animal_cfg.get('bear_count', 3)),
+            'wolf': (Wolf, animal_cfg.get('wolf_count', 5)),
+            'bird': (Bird, animal_cfg.get('bird_count', 12))
+        }
+        
+        for species, (cls, target_count) in species_map.items():
+            current = current_counts.get(species, 0)
+            to_spawn = max(0, target_count - current)
+            if to_spawn > 0:
+                for _ in range(min(to_spawn, 3)):  # Spawn up to 3 at a time
+                    x = random.uniform(-spawn_radius, spawn_radius)
+                    y = random.uniform(-spawn_radius, spawn_radius)
+                    if x ** 2 + y ** 2 < (spawn_radius * 0.2) ** 2:
+                        continue
+                    z = self.terrain.get_height(x, y) if self.terrain else 0.0
+                    if species == 'bird':
+                        z = 0  # Birds spawn at 0 then fly up
+                    animal = cls(Vec3(x, y, z))
+                    animal.render(self.app.render)
+                    self.animals.append(animal)
+                    if self.player:
+                        self.player.add_animal_to_collision(animal)
+                if to_spawn > 0:
+                    logging.info(f"Respawned {min(to_spawn, 3)} {species}(s). Current: {current + min(to_spawn, 3)}/{target_count}")
+        
+        # Sync HUD
+        self._sync_hud_objectives(force=True)
+
+    def _update_tutorial(self, dt: float):
+        """Show contextual tutorial hints for new players."""
+        if not hasattr(self, '_tutorial_hints'):
+            self._tutorial_hints = {
+                'movement': {'shown': False, 'timer': 5.0, 'text': "WASD to move | SHIFT to sprint | SPACE to jump"},
+                'shooting': {'shown': False, 'timer': 15.0, 'text': "MOUSE1 to shoot | R to reload | 1/2/3 to switch weapons"},
+                'aiming': {'shown': False, 'timer': 30.0, 'text': "Right-click to zoom with rifle | Aim for headshots!"},
+                'harvesting': {'shown': False, 'timer': 45.0, 'text': "Track wind direction — animals smell you downwind!"},
+                'survival': {'shown': False, 'timer': 60.0, 'text': "Watch hunger & thirst | Use health potions with E"},
+            }
+        for key, hint in self._tutorial_hints.items():
+            if not hint['shown']:
+                hint['timer'] -= dt
+                if hint['timer'] <= 0:
+                    hint['shown'] = True
+                    if self.ui_manager:
+                        self.ui_manager.show_message(hint['text'], 5.0, (0.9, 0.9, 0.4, 1.0))
+                    break  # Only show one hint at a time
+
+    def on_projectile_hit(self, projectile, animal):
+        """Callback when a projectile hits an animal — shows hit feedback even if not lethal."""
+        if self.ui_manager and self.ui_manager.hud:
+            self.ui_manager.hud.show_hit_marker()
+            self.ui_manager.hud.show_damage_number(projectile.damage)
+        # Also show a brief message for significant hits
+        if self.ui_manager and projectile.damage >= 20:
+            species = getattr(animal, 'species', 'Animal')
+            self.ui_manager.show_message(f"Hit {species}! -{projectile.damage:.0f} HP", 1.0, (1.0, 0.5, 0.2, 1.0))
+
+    def game_over(self):
+        """Handle game over state with detailed statistics."""
+        try:
+            self.game_state = 'game_over'
+
+            # Build detailed stats
+            stats = {}
+            if self.ui_manager and self.ui_manager.hud:
+                hud = self.ui_manager.hud
+                stats['score'] = hud.score
+                stats['kills'] = hud.kills
+                stats['shots_fired'] = hud.shots_fired
+                stats['shots_hit'] = hud.shots_hit
+                stats['accuracy'] = (hud.shots_hit / max(hud.shots_fired, 1)) * 100
+            if self.player:
+                stats['level'] = self.player.level
+                stats['xp'] = self.player.experience
+                stats['harvested_meats'] = self.player.harvested_meats
+                stats['harvested_skins'] = self.player.harvested_skins
+                stats['harvested_trophies'] = self.player.harvested_trophies
+                stats['game_time'] = int(self.game_time)
+
+            # Update game over screen
+            if self.ui_manager:
+                self.ui_manager.update_game_over_score(
+                    stats.get('score', 0),
+                    stats.get('kills', 0),
+                    stats.get('accuracy', 0)
+                )
+                self.ui_manager.show_menu('game_over')
+                self.ui_manager.toggle_hud_visibility(False)
+                # Show detailed stats message
+                detail = f"Level {stats.get('level', 1)}  |  {stats.get('harvested_meats', 0)} Meats  |  {stats.get('game_time', 0)}s"
+                self.ui_manager.show_message(detail, 4.0, (0.8, 0.8, 0.8, 1.0))
+                logging.info("Game over screen shown")
+            else:
+                logging.warning("UI manager not available for game over screen")
+        except Exception as e:
+            logging.error(f"Error during game over: {e}")
+
+    def set_difficulty(self, difficulty: str):
+        """Set game difficulty and apply config multipliers."""
+        if difficulty in config.DIFFICULTY_CONFIG:
+            self.difficulty = difficulty
+            diff_cfg = config.DIFFICULTY_CONFIG[difficulty]
+            # Apply difficulty settings to animals
+            for animal in self.animals:
+                if hasattr(animal, 'speed') and hasattr(animal, '_base_speed'):
+                    animal.speed = animal._base_speed * diff_cfg.get('animal_speed_multiplier', 1.0)
+                if hasattr(animal, 'health') and hasattr(animal, '_base_health'):
+                    animal.health = animal._base_health * diff_cfg.get('animal_health_multiplier', 1.0)
+            logging.info(f"Difficulty set to: {difficulty}")
 
     def cleanup_game(self):
         """Clean up current game session for restart."""

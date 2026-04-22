@@ -173,12 +173,35 @@ class Player:
         # Advanced player attributes
         self.experience = 0
         self.level = 1
+        self.xp_for_next_level = 100
         self.hunger = 100.0
         self.thirst = 100.0
         self.hunger_depletion_rate = 0.1  # Per second
         self.thirst_depletion_rate = 0.05  # Per second
         self.hunger_threshold = 20.0
         self.thirst_threshold = 10.0
+
+        # Wind system for scent awareness
+        self.wind_direction = Vec3(1, 0, 0)
+        self.wind_speed = 5.0
+        self.wind_direction_name = 'E'
+        self._wind_change_timer = 0.0
+        self._wind_change_interval = 30.0
+
+        # Harvested loot tracking
+        self.harvested_meats = 0
+        self.harvested_skins = 0
+        self.harvested_trophies = 0
+
+        # Crouch and jump mechanics
+        self.is_crouching = False
+        self.crouch_height = 0.8
+        self.normal_height = 1.3
+        self.current_height = self.normal_height
+        self.jump_velocity = 0.0
+        self.is_jumping = False
+        self.gravity = 25.0
+        self.jump_strength = 8.0
 
         # Weapon recoil and camera shake
         self.recoil_pitch = 0.0
@@ -187,6 +210,12 @@ class Player:
         self.shake_decay = 8.0
         self._shake_offset = Vec3(0, 0, 0)
         self._base_camera_pos = None
+
+        # Visual effects
+        self.muzzle_flash = None
+        self._muzzle_flash_timer = 0.0
+        self._bullet_tracers = []
+
 
         # World boundaries
         self.world_bounds = 140.0  # Keep player within terrain
@@ -308,6 +337,10 @@ class Player:
         self.app.accept('mouse3', self.toggle_zoom, [True])
         self.app.accept('mouse3-up', self.toggle_zoom, [False])
 
+        # Crouch and jump controls
+        self.app.accept('c', self.toggle_crouch)
+        self.app.accept('space', self.jump)
+
         # Inventory/item controls
         self.app.accept('e', self.use_health_potion)
 
@@ -355,6 +388,42 @@ class Player:
             else:
                 self.current_weapon.set_zoom(1.0)
                 self.is_zoomed = False
+
+    def toggle_crouch(self):
+        """Toggle crouch state."""
+        self.is_crouching = not self.is_crouching
+        self.current_height = self.crouch_height if self.is_crouching else self.normal_height
+        # Reduce movement speed when crouching
+        if self.is_crouching:
+            self.move_speed = 5.0
+            self.sprint_speed = 5.0
+        else:
+            self.move_speed = 10.0
+            self.sprint_speed = 15.0
+        logging.info(f"{'Crouching' if self.is_crouching else 'Standing'}")
+
+    def jump(self):
+        """Initiate jump if on ground."""
+        if not self.is_jumping:
+            terrain_height = self.get_terrain_height(self.position.getX(), self.position.getY())
+            # Only jump if close to ground
+            if abs(self.position.getZ() - (terrain_height + self.current_height)) < 0.5:
+                self.jump_velocity = self.jump_strength
+                self.is_jumping = True
+
+    def _update_jump_and_gravity(self, dt: float):
+        """Apply gravity and handle jumping."""
+        if self.is_jumping or self.jump_velocity != 0:
+            self.position.setZ(self.position.getZ() + self.jump_velocity * dt)
+            self.jump_velocity -= self.gravity * dt
+            
+            terrain_height = self.get_terrain_height(self.position.getX(), self.position.getY())
+            ground_level = terrain_height + self.current_height
+            
+            if self.position.getZ() <= ground_level:
+                self.position.setZ(ground_level)
+                self.jump_velocity = 0.0
+                self.is_jumping = False
 
     def use_health_potion(self):
         """Use a health potion from inventory."""
@@ -413,6 +482,9 @@ class Player:
         # Update stamina
         self._update_stamina(dt)
         
+        # Update jump and gravity
+        self._update_jump_and_gravity(dt)
+        
         # Calculate movement direction based on camera orientation
         move_dir = Vec3(0, 0, 0)
         is_moving = False
@@ -451,10 +523,10 @@ class Player:
         self.position.setX(max(-self.world_bounds, min(self.world_bounds, self.position.getX())))
         self.position.setY(max(-self.world_bounds, min(self.world_bounds, self.position.getY())))
         
-        # Prevent player from going below terrain
+        # Prevent player from going below terrain (respect crouch height)
         terrain_height = self.get_terrain_height(self.position.getX(), self.position.getY())
-        if self.position.getZ() < terrain_height + 1.3:  # Player height
-            self.position.setZ(terrain_height + 1.3)
+        if self.position.getZ() < terrain_height + self.current_height and not self.is_jumping:
+            self.position.setZ(terrain_height + self.current_height)
             
         if self.model is not None:
             self.model.setPos(self.position)
@@ -610,6 +682,9 @@ class Player:
             self.recoil_pitch = 2.5 if self.current_weapon.weapon_type == 'rifle' else 1.5 if self.current_weapon.weapon_type == 'pistol' else 1.0
             self.shake_intensity = 0.15 if self.current_weapon.weapon_type == 'rifle' else 0.08
             
+            # Create muzzle flash effect
+            self._spawn_muzzle_flash(shot_origin, shot_direction)
+            
             # Play weapon fire sound
             try:
                 if hasattr(self.app, 'game') and self.app.game and hasattr(self.app.game, 'audio_manager') and self.app.game.audio_manager:
@@ -625,6 +700,10 @@ class Player:
             return
             
         current_time = self.app.taskMgr.globalClock.getFrameTime()
+        
+        # Start reload animation first
+        if not self.current_weapon.reload(current_time):
+            return  # Already reloading or full
         
         # Determine ammo type for current weapon
         ammo_type = f"{self.current_weapon.weapon_type}_ammo"
@@ -642,9 +721,27 @@ class Player:
             logging.info(f"Reloaded {self.current_weapon.name} with {ammo_to_transfer} rounds!")
         else:
             logging.warning("No ammo available for reload!")
+            self.current_weapon.reloading = False  # Cancel reload if no ammo
+
+    def _spawn_muzzle_flash(self, position: Vec3, direction: Vec3):
+        """Create a brief muzzle flash visual effect."""
+        try:
+            from panda3d.core import PointLight, VBase4
+            flash = PointLight('muzzle_flash')
+            flash.setColor(VBase4(1.0, 0.8, 0.4, 1.0))
+            flash.setAttenuation(VBase4(1, 0, 0.02))
+            flash_np = self.app.render.attachNewNode(flash)
+            flash_np.setPos(position + direction * 0.5)
+            self.app.render.setLight(flash_np)
             
-        # Start reload animation
-        self.current_weapon.reload(current_time)
+            # Remove after brief delay
+            def remove_flash(task):
+                self.app.render.clearLight(flash_np)
+                flash_np.removeNode()
+                return task.done
+            self.app.taskMgr.doMethodLater(0.05, remove_flash, 'remove_muzzle_flash')
+        except Exception:
+            pass
 
 
     def update_projectiles(self, dt: float):
@@ -704,6 +801,19 @@ class Player:
         self.thirst = min(100.0, self.thirst + amount)
         logging.info(f"Drank water! Thirst: {self.thirst:.1f}")
 
+    def gain_experience(self, amount: float):
+        """Gain experience points."""
+        self.experience += amount
+        self.check_level_up()
+
+    def check_level_up(self):
+        """Check if player has enough XP to level up."""
+        while self.experience >= self.xp_for_next_level:
+            self.experience -= self.xp_for_next_level
+            self.level_up()
+            self.xp_for_next_level = int(self.xp_for_next_level * 1.5)
+            logging.info(f"Next level requires {self.xp_for_next_level} XP")
+
     def level_up(self):
         """Increase player level and stats."""
         self.level += 1
@@ -713,6 +823,44 @@ class Player:
         self.stamina = min(self.stamina + 10, self.max_stamina)
         self.move_speed += 1.0
         logging.info(f"Level up! Now level {self.level}")
+        # Show level up message if game is available
+        if hasattr(self.app, 'game') and self.app.game and hasattr(self.app.game, 'ui_manager') and self.app.game.ui_manager:
+            self.app.game.ui_manager.show_message(f"LEVEL UP! Level {self.level}", 3.0, (0.3, 1.0, 0.3, 1.0))
+
+    def harvest_animal(self, animal) -> dict:
+        """Harvest meat, skin, and trophies from a dead animal."""
+        if not getattr(animal, 'is_dead', lambda: False)():
+            return {}
+        species = getattr(animal, 'species', 'unknown')
+        results = {'meat': 0, 'skin': 0, 'trophy': 0}
+        if species == 'deer':
+            results = {'meat': 3, 'skin': 1, 'trophy': 0}
+        elif species == 'rabbit':
+            results = {'meat': 1, 'skin': 0, 'trophy': 0}
+        elif species == 'bear':
+            results = {'meat': 5, 'skin': 2, 'trophy': 1}
+        elif species == 'wolf':
+            results = {'meat': 2, 'skin': 1, 'trophy': 0}
+        elif species == 'bird':
+            results = {'meat': 1, 'skin': 0, 'trophy': 0}
+        self.harvested_meats += results['meat']
+        self.harvested_skins += results['skin']
+        self.harvested_trophies += results['trophy']
+        return results
+
+    def _update_wind(self, dt: float):
+        """Update wind direction periodically."""
+        self._wind_change_timer += dt
+        if self._wind_change_timer >= self._wind_change_interval:
+            self._wind_change_timer = 0.0
+            import random, math
+            angle = random.uniform(0, 2 * math.pi)
+            self.wind_direction = Vec3(math.cos(angle), math.sin(angle), 0)
+            self.wind_speed = random.uniform(2.0, 12.0)
+            # Convert to cardinal direction name
+            dirs = ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW']
+            idx = int(((angle + math.pi / 8) % (2 * math.pi)) / (math.pi / 4)) % 8
+            self.wind_direction_name = dirs[idx]
 
     def on_projectile_hit(self, projectile: Projectile, animal):
         """Handle projectile hitting an animal."""

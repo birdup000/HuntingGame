@@ -62,9 +62,7 @@ class Projectile:
             if hasattr(self, attr):
                 setattr(self, attr, None)
 
-    def __del__(self):
-        """Destructor to ensure cleanup on garbage collection."""
-        self.cleanup()
+    # __del__ removed — dangerous with Panda3D reference cycles, use cleanup() explicitly
 
 
 class CollisionManager:

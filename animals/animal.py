@@ -52,7 +52,9 @@ class Animal(ABC):
         self.species = species
         self.state = AnimalState.IDLE
         self.health = 100.0
+        self._base_health = self.health
         self.speed = 5.0
+        self._base_speed = self.speed
         self.detection_range = 50.0
         self.flee_range = 30.0
         self.node: Optional[NodePath] = None
@@ -592,6 +594,20 @@ class Animal(ABC):
 
         # Update position
         self.position += self.velocity * dt
+        
+        # Rotate animal to face movement direction
+        if self.velocity.lengthSquared() > 0.01 and self.node:
+            # Calculate heading from velocity
+            heading = math.degrees(math.atan2(self.velocity.y, self.velocity.x))
+            # Smooth rotation
+            current_h = self.node.getH()
+            diff = heading - current_h
+            # Normalize to -180 to 180
+            while diff > 180:
+                diff -= 360
+            while diff < -180:
+                diff += 360
+            self.node.setH(current_h + diff * min(dt * 5.0, 1.0))
         
         # Apply gravity/terrain alignment - ensure animals stay on terrain
         if hasattr(self, '_last_ground_height'):

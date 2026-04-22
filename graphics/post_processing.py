@@ -177,17 +177,18 @@ class PostProcessing:
         logging.info("Post-processing render pipeline setup completed")
         
     def _update_bloom(self, task):
-        """Update bloom effect."""
-        print("Bloom update not implemented")
+        """Update bloom effect — handled by shader, no per-frame work needed."""
         return task.cont
         
     def adjust_exposure(self, exposure_value):
         """Adjust exposure for different lighting conditions."""
-        print("Exposure adjustment not implemented")
+        # Exposure adjustment stub — would require HDR pipeline
+        pass
 
     def enable_motion_blur(self, strength=0.5):
         """Enable motion blur effect."""
-        print("Motion blur not implemented")
+        # Motion blur requires velocity buffer — stub for future implementation
+        pass
 
 
 class CinematicEffects:

@@ -265,10 +265,10 @@ class VolumetricFog:
     
     def enable_god_rays(self, light_source):
         """Enable volumetric lighting (god rays) from sun."""
-        # This would work with post-processing shaders
-        # For now, we'll simulate with fog density variation
-        if light_source:
-            pass
+        # God rays require post-processing shaders — simulated via fog for now
+        if light_source and hasattr(self, 'fog_density'):
+            self.fog_density = min(0.005, self.fog_density + 0.001)
+            self.setup_volumetric_fog()
 
 
 class PointLightEmitter:

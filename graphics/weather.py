@@ -26,14 +26,14 @@ class WeatherSystem:
 
         # Initialize fog and lighting
         self.fog = Fog('weather_fog')
-        self.fog.set_color(1, 1, 1)
-        self.fog.set_mode(Fog.MExponential)
-        self.render.set_fog(self.fog)
+        self.fog.setColor(1, 1, 1)
+        self.fog.setMode(Fog.MExponential)
+        self.render.setFog(self.fog)
 
         self.ambient_light = AmbientLight('weather_ambient')
-        self.ambient_light.set_color(VBase4(1, 1, 1, 1))
-        self.light_np = self.render.attach_new_node(self.ambient_light)
-        self.render.set_light(self.light_np)
+        self.ambient_light.setColor(VBase4(1, 1, 1, 1))
+        self.light_np = self.render.attachNewNode(self.ambient_light)
+        self.render.setLight(self.light_np)
 
         # Weather transition parameters
         self.transition_time = 0
@@ -89,61 +89,77 @@ class WeatherSystem:
     
     def _start_rain(self):
         """Create rain particle effect."""
-        self.fog.set_exp_density(0.01)
-        self.fog.set_color(0.7, 0.8, 0.9)
-        self.ambient_light.set_color(VBase4(0.5, 0.5, 0.5, 1))
+        self.fog.setExpDensity(0.01)
+        self.fog.setColor(0.7, 0.8, 0.9)
+        self.ambient_light.setColor(VBase4(0.5, 0.5, 0.5, 1))
         
     def _start_snow(self):
         """Create snow particle effect."""
-        self.fog.set_exp_density(0.005)
-        self.fog.set_color(0.9, 0.9, 0.95)
-        self.ambient_light.set_color(VBase4(0.7, 0.7, 0.7, 1))
+        self.fog.setExpDensity(0.005)
+        self.fog.setColor(0.9, 0.9, 0.95)
+        self.ambient_light.setColor(VBase4(0.7, 0.7, 0.7, 1))
     
     def update_precipitation(self, dt):
         """Update precipitation particles and wetness."""
         if self.precipitation:
             if self.current_weather == 'rain':
                 density = 0.01 * self.weather_strength
-                self.fog.set_exp_density(density)
+                self.fog.setExpDensity(density)
             elif self.current_weather == 'snow':
                 density = 0.005 * self.weather_strength
-                self.fog.set_exp_density(density)
+                self.fog.setExpDensity(density)
             
     def _stop_precipitation(self):
         """Remove precipitation effects."""
-        self.fog.set_exp_density(0.0)
-        self.fog.set_color(1, 1, 1)
-        self.ambient_light.set_color(VBase4(1, 1, 1, 1))
+        self.fog.setExpDensity(0.0)
+        self.fog.setColor(1, 1, 1)
+        self.ambient_light.setColor(VBase4(1, 1, 1, 1))
     
     def _start_fog(self):
         """Add fog layer for weather effects."""
-        self.fog.set_exp_density(0.02)
-        self.fog.set_color(0.8, 0.8, 0.8)
-        self.ambient_light.set_color(VBase4(0.6, 0.6, 0.6, 1))
+        self.fog.setExpDensity(0.02)
+        self.fog.setColor(0.8, 0.8, 0.8)
+        self.ambient_light.setColor(VBase4(0.6, 0.6, 0.6, 1))
         
     def _stop_fog(self):
         """Remove fog effects."""
-        self.fog.set_exp_density(0.0)
-        self.fog.set_color(1, 1, 1)
-        self.ambient_light.set_color(VBase4(1, 1, 1, 1))
+        self.fog.setExpDensity(0.0)
+        self.fog.setColor(1, 1, 1)
+        self.ambient_light.setColor(VBase4(1, 1, 1, 1))
     
     def update_fog_effect(self, dt):
         """Update moving fog effects."""
         if self.fog_effect:
             if self.current_weather == 'fog':
                 density = 0.02 * self.weather_strength
-                self.fog.set_exp_density(density)
+                self.fog.setExpDensity(density)
     
     def _check_weather_events(self):
         """Random weather events like thunder/lightning."""
-        # Weather events are currently disabled to reduce spam
-        # Future implementation would include random lightning/thunder events
-        # based on weather severity and time
-        pass
+        # Lightning events during storms
+        if self.current_weather == 'storm' and random.random() < 0.002:
+            self._trigger_lightning()
         
     def _trigger_lightning(self):
         """Create lightning flash effect."""
-        print("Lightning effect not implemented")
+        # Flash ambient light bright white briefly
+        if hasattr(self, 'ambient_light'):
+            original = self.ambient_light.getColor()
+            self.ambient_light.setColor(VBase4(2.0, 2.0, 2.5, 1.0))
+            # Restore after brief flash
+            from direct.task import Task
+            def restore_light(task):
+                self.ambient_light.setColor(original)
+                return task.done
+            # Use doMethodLater via taskMgr if available on render
+            try:
+                from direct.task import TaskManager
+                import builtins
+                base = builtins.get('base', None)
+                if base and hasattr(base, 'taskMgr'):
+                    base.taskMgr.doMethodLater(0.08, restore_light, 'restore_lightning')
+            except Exception:
+                pass
         
     def get_wetness_factor(self):
         """Return wetness for material dampening."""
@@ -178,9 +194,9 @@ class WeatherSystem:
             color = VBase4(1, 1, 1, 1)
             light_factor = 1.0
 
-        self.fog.set_exp_density(density)
-        self.fog.set_color(color)
-        self.ambient_light.set_color(VBase4(light_factor, light_factor, light_factor, 1))
+        self.fog.setExpDensity(density)
+        self.fog.setColor(color)
+        self.ambient_light.setColor(VBase4(light_factor, light_factor, light_factor, 1))
 
     def start_rain(self):
         """Start rain weather effect."""

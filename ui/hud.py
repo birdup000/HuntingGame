@@ -48,7 +48,12 @@ class HUD:
             'stamina': None,
             'hunger': None,
             'thirst': None,
-            'time': None
+            'time': None,
+            'xp': None,
+            'level': None,
+            'wind': None,
+            'compass': None,
+            'stealth': None
         }
         self._idle_time = 0.0
         self.fade_delay = 2.6
@@ -71,6 +76,14 @@ class HUD:
         self.crosshair_color_ready = Vec4(0.95, 0.95, 0.95, 1.0)
         self.crosshair_color_empty = Vec4(1.0, 0.65, 0.2, 1.0)
         self.crosshair_color_reload = Vec4(1.0, 0.25, 0.25, 1.0)
+        self.crosshair_color_hit = Vec4(1.0, 0.1, 0.1, 1.0)
+
+        # Hit marker flash state
+        self._hit_marker_timer = 0.0
+        self._hit_marker_duration = 0.15
+
+        # Damage number queue
+        self._damage_numbers: list = []
 
         # Minimap
         self.minimap_panel = None
@@ -173,6 +186,20 @@ class HUD:
         self.score_text = self._create_text("Score: 0", self.left_panel, (-0.32, -0.08), 0.05, self.theme['accent'], TextNode.ALeft)
         self.kills_text = self._create_text("Harvested: 0", self.left_panel, (-0.32, -0.14), 0.045, self.theme['secondary_text'], TextNode.ALeft)
 
+        # XP bar (below kills)
+        self.xp_bar = DirectWaitBar(
+            parent=self.left_panel,
+            range=100,
+            value=0,
+            frameSize=(-0.54, 0.54, -0.04, 0.04),
+            pos=(0.0, 0, -0.18),
+            barColor=(0.32, 0.72, 0.42, 0.95),
+            frameColor=(0.08, 0.1, 0.15, 0.9)
+        )
+        self.xp_bar.setScale(0.22)
+        self._register_element(self.xp_bar)
+        self.level_text = self._create_text("Lvl 1", self.left_panel, (-0.32, -0.18), 0.04, self.theme['accent'], TextNode.ALeft)
+
         # Right combat panel
         self.right_panel = self._register_panel(DirectFrame(
             parent=hud_parent,
@@ -208,6 +235,9 @@ class HUD:
         self.ammo_icon.setTransparency(TransparencyAttrib.MAlpha)
 
         self.accuracy_text = self._create_text("Accuracy: 0%", self.right_panel, (-0.32, -0.1), 0.045, self.theme['secondary_text'])
+
+        # Wind indicator
+        self.wind_text = self._create_text("Wind: N 5mph", self.right_panel, (-0.32, -0.16), 0.038, self.theme['secondary_text'])
 
         # Objective panel
         self.objective_panel = self._register_panel(DirectFrame(
@@ -287,9 +317,10 @@ class HUD:
             changed = True
 
         # Update ammo display
-        if hasattr(self.player, 'weapon'):
-            current_ammo = self.player.weapon.current_ammo
-            max_ammo = self.player.weapon.max_ammo
+        weapon = getattr(self.player, 'current_weapon', None)
+        if weapon:
+            current_ammo = weapon.current_ammo
+            max_ammo = weapon.max_ammo
             self.ammo_text.setText(f"Ammo {current_ammo} / {max_ammo}")
             ratio = 0.0 if max_ammo <= 0 else current_ammo / float(max_ammo)
             self.ammo_bar['value'] = max(0.0, min(1.0, ratio))
@@ -298,11 +329,11 @@ class HUD:
                 changed = True
 
             # Update weapon name
-            self.weapon_text.setText(self.player.weapon.name)
-            if self.player.weapon.reloading:
+            self.weapon_text.setText(weapon.name)
+            if weapon.reloading:
                 self.weapon_status_text.setText("Reloading")
             elif current_ammo == 0:
-                self.weapon_status_text.setText("Empty")
+                self.weapon_status_text.setText("Empty — Press R")
             else:
                 self.weapon_status_text.setText("Ready")
         else:
@@ -331,20 +362,48 @@ class HUD:
             accuracy = (self.shots_hit / self.shots_fired) * 100
             self.accuracy_text.setText(f"Accuracy: {accuracy:.1f}%")
         else:
-            self.accuracy_text.setText("Accuracy: 0%")
-            accuracy = 0.0
+            self.accuracy_text.setText("Accuracy: —")
+            accuracy = -1.0
         if self._last_state['accuracy'] != accuracy:
             self._last_state['accuracy'] = accuracy
             changed = True
 
-        # Update crosshair color based on weapon state
+        # Update crosshair color based on weapon state / hit marker
         if self.crosshair_image:
-            if hasattr(self.player, 'weapon') and self.player.weapon.reloading:
+            if self._hit_marker_timer > 0:
+                self.crosshair_image.setColorScale(self.crosshair_color_hit)
+                self._hit_marker_timer -= dt
+            elif weapon and weapon.reloading:
                 self.crosshair_image.setColorScale(self.crosshair_color_reload)
-            elif hasattr(self.player, 'weapon') and self.player.weapon.current_ammo == 0:
+            elif weapon and weapon.current_ammo == 0:
                 self.crosshair_image.setColorScale(self.crosshair_color_empty)
             else:
                 self.crosshair_image.setColorScale(self.crosshair_color_ready)
+
+        # Update damage numbers
+        self._update_damage_numbers(dt)
+
+        # Update XP / Level
+        xp = getattr(self.player, 'experience', 0)
+        level = getattr(self.player, 'level', 1)
+        xp_for_next = getattr(self.player, 'xp_for_next_level', 100)
+        if self._last_state['xp'] != xp:
+            self._last_state['xp'] = xp
+            self.xp_bar['value'] = max(0.0, min(100.0, (xp % xp_for_next) / xp_for_next * 100.0))
+            changed = True
+        if self._last_state['level'] != level:
+            self._last_state['level'] = level
+            self.level_text.setText(f"Lvl {level}")
+            changed = True
+
+        # Update wind
+        wind_dir = getattr(self.player, 'wind_direction_name', 'N')
+        wind_speed = getattr(self.player, 'wind_speed', 5)
+        wind_str = f"Wind: {wind_dir} {wind_speed:.0f}mph"
+        if self._last_state['wind'] != wind_str:
+            self._last_state['wind'] = wind_str
+            self.wind_text.setText(wind_str)
+            changed = True
 
         if self._objective_dirty:
             changed = True
@@ -353,9 +412,8 @@ class HUD:
 
         self._update_fade(dt, changed)
 
-        # Render Pygame overlay if available
-        if self.pygame_initialized:
-            self.render_pygame_overlay()
+        # Pygame overlay not used in this build
+        pass
 
     def _setup_minimap(self):
         """Create a simple minimap showing player and animal positions."""
@@ -517,6 +575,46 @@ class HUD:
             self.shots_hit += 1
             self.kills += 1
         self._idle_time = 0.0
+
+    def show_hit_marker(self):
+        """Flash the crosshair red to indicate a hit."""
+        self._hit_marker_timer = self._hit_marker_duration
+        self._idle_time = 0.0
+
+    def show_damage_number(self, damage: float, position: Optional[Tuple[float, float]] = None):
+        """Display a floating damage number on screen."""
+        hud_parent = getattr(self.app, 'aspect2d', getattr(self.app, 'render2d', None))
+        if hud_parent is None:
+            return
+        # Default to center if no position provided
+        pos = position if position else (0.05, 0.05)
+        text = OnscreenText(
+            text=f"-{damage:.0f}",
+            pos=pos,
+            scale=0.07,
+            fg=(1.0, 0.2, 0.2, 1.0),
+            align=TextNode.ACenter,
+            parent=hud_parent,
+            mayChange=True
+        )
+        self._damage_numbers.append({'text': text, 'timer': 1.0, 'pos': list(pos)})
+        self._idle_time = 0.0
+
+    def _update_damage_numbers(self, dt: float):
+        """Animate and cleanup floating damage numbers."""
+        remaining = []
+        for dn in self._damage_numbers:
+            dn['timer'] -= dt
+            dn['pos'][1] += dt * 0.15  # Float upward
+            dn['text'].setPos(dn['pos'][0], dn['pos'][1])
+            # Fade out
+            alpha = max(0.0, min(1.0, dn['timer']))
+            dn['text'].setFg((1.0, 0.2, 0.2, alpha))
+            if dn['timer'] > 0:
+                remaining.append(dn)
+            else:
+                dn['text'].destroy()
+        self._damage_numbers = remaining
 
     def show_message(self, message: str, duration: float = 3.0, color: Tuple[float, float, float, float] = (1, 1, 1, 1)):
         """Display a temporary message on screen."""
