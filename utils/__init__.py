@@ -1,6 +1,7 @@
-"""
-Utils module for the 3D Hunting Simulator.
-Contains helper functions and utilities.
-"""
+"""Utilities package for the 3D Hunting Simulator."""
 
-__all__ = []  # Add exported functions here
+try:
+    from utils.save_manager import SaveManager
+    __all__ = ['SaveManager']
+except ImportError:
+    __all__ = []

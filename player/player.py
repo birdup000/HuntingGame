@@ -180,6 +180,17 @@ class Player:
         self.hunger_threshold = 20.0
         self.thirst_threshold = 10.0
 
+        # Weapon recoil and camera shake
+        self.recoil_pitch = 0.0
+        self.recoil_recovery = 5.0
+        self.shake_intensity = 0.0
+        self.shake_decay = 8.0
+        self._shake_offset = Vec3(0, 0, 0)
+        self._base_camera_pos = None
+
+        # World boundaries
+        self.world_bounds = 140.0  # Keep player within terrain
+
         # Camera setup - ensure better positioning
         self.camera_node = getattr(self.app, 'camera', None)
         if self.camera_node is not None:
@@ -395,6 +406,7 @@ class Player:
 
     def update(self, dt):
         """Update player position and handle movement with advanced mechanics."""
+        import random
         # Update basic needs (hunger, thirst)
         self._update_basic_needs(dt)
         
@@ -403,16 +415,21 @@ class Player:
         
         # Calculate movement direction based on camera orientation
         move_dir = Vec3(0, 0, 0)
+        is_moving = False
 
         if self.camera_node is not None:
             if self.movement['forward']:
                 move_dir += self.camera_node.getQuat().getForward()
+                is_moving = True
             if self.movement['backward']:
                 move_dir -= self.camera_node.getQuat().getForward()
+                is_moving = True
             if self.movement['left']:
                 move_dir -= self.camera_node.getQuat().getRight()
+                is_moving = True
             if self.movement['right']:
                 move_dir += self.camera_node.getQuat().getRight()
+                is_moving = True
 
         # Apply speed based on sprint and stamina
         current_speed = self.move_speed
@@ -430,6 +447,10 @@ class Player:
         # Update position
         self.position += move_dir
         
+        # Enforce world boundaries
+        self.position.setX(max(-self.world_bounds, min(self.world_bounds, self.position.getX())))
+        self.position.setY(max(-self.world_bounds, min(self.world_bounds, self.position.getY())))
+        
         # Prevent player from going below terrain
         terrain_height = self.get_terrain_height(self.position.getX(), self.position.getY())
         if self.position.getZ() < terrain_height + 1.3:  # Player height
@@ -438,11 +459,28 @@ class Player:
         if self.model is not None:
             self.model.setPos(self.position)
 
+        # Update recoil recovery
+        if self.recoil_pitch > 0:
+            self.recoil_pitch = max(0.0, self.recoil_pitch - self.recoil_recovery * dt)
+            if self.camera_node is not None:
+                self.camera_node.setP(self.camera_node.getP() + self.recoil_recovery * dt)
+
+        # Update camera shake
+        if self.shake_intensity > 0.001:
+            self.shake_intensity = max(0.0, self.shake_intensity - self.shake_decay * dt)
+            self._shake_offset = Vec3(
+                random.uniform(-self.shake_intensity, self.shake_intensity),
+                random.uniform(-self.shake_intensity, self.shake_intensity),
+                random.uniform(-self.shake_intensity, self.shake_intensity)
+            )
+        else:
+            self._shake_offset = Vec3(0, 0, 0)
+
         # Update camera position to follow player
         if self.camera_node is not None:
             camera_offset = self.camera_node.getQuat().getForward() * -self.camera_distance
             camera_offset.setZ(1.5)  # Keep camera at more natural eye level
-            camera_pos = self.position + camera_offset
+            camera_pos = self.position + camera_offset + self._shake_offset
             
             # Prevent camera from going below terrain
             terrain_height = self.get_terrain_height(camera_pos.getX(), camera_pos.getY())
@@ -450,6 +488,10 @@ class Player:
                 camera_pos.setZ(terrain_height + 1.5)
             
             self.camera_node.setPos(camera_pos)
+
+        # Update audio footsteps if available
+        if hasattr(self.app, 'game') and self.app.game and hasattr(self.app.game, 'audio_manager') and self.app.game.audio_manager:
+            self.app.game.audio_manager.update_footsteps(dt, self.position, is_moving, self.is_sprinting)
 
         # Basic collision detection
         if self.collision_traverser is not None and hasattr(self.app, 'render'):
@@ -545,6 +587,7 @@ class Player:
         accuracy = self.current_weapon.get_accuracy()
         if accuracy < 1.0:
             # Add spread based on accuracy
+            import random
             spread = Vec3(
                 random.uniform(-0.5, 0.5) * (1.0 - accuracy),
                 random.uniform(-0.5, 0.5) * (1.0 - accuracy),
@@ -562,6 +605,17 @@ class Player:
             
             # Consume ammo
             self.inventory.add_ammo(ammo_type, -1)
+            
+            # Apply recoil
+            self.recoil_pitch = 2.5 if self.current_weapon.weapon_type == 'rifle' else 1.5 if self.current_weapon.weapon_type == 'pistol' else 1.0
+            self.shake_intensity = 0.15 if self.current_weapon.weapon_type == 'rifle' else 0.08
+            
+            # Play weapon fire sound
+            try:
+                if hasattr(self.app, 'game') and self.app.game and hasattr(self.app.game, 'audio_manager') and self.app.game.audio_manager:
+                    self.app.game.audio_manager.play_weapon_fire(self.current_weapon.weapon_type)
+            except Exception:
+                pass
             
             logging.debug(f"Shot fired with {self.current_weapon.name}! Ammo remaining: {self.inventory.get_ammo(ammo_type)}")
 

@@ -10,11 +10,21 @@ from player.player import Player
 from environment.pbr_terrain import PBRTerrain, OptimizedTerrainRenderer
 from environment.decor import DecorManager
 from environment.simple_sky import SimpleSkyDome
-from animals.animal import Deer, Rabbit
+from animals.animal import Deer, Rabbit, Bear, Wolf, Bird
 from ui.menus import UIManager
 from panda3d.core import Vec3, CardMaker, TransparencyAttrib
 import random
 import config
+
+try:
+    from audio.audio_manager import AudioManager
+except ImportError:
+    AudioManager = None
+
+try:
+    from utils.save_manager import SaveManager
+except ImportError:
+    SaveManager = None
 
 from typing import Dict, Optional
 
@@ -55,6 +65,28 @@ class Game:
             self._pending_objective_counts: Dict[str, int] = {}
             self._last_reported_objective_counts: Optional[Dict[str, int]] = None
             self._objective_initialized = False
+            self.difficulty = 'normal'
+            self._auto_save_timer = 0.0
+            
+            # Initialize save manager
+            try:
+                if SaveManager is not None:
+                    self.save_manager = SaveManager()
+                else:
+                    self.save_manager = None
+            except Exception as e:
+                logging.warning(f"Failed to initialize save manager: {e}")
+                self.save_manager = None
+            
+            # Initialize audio manager
+            try:
+                if AudioManager is not None:
+                    self.audio_manager = AudioManager(self.app)
+                else:
+                    self.audio_manager = None
+            except Exception as e:
+                logging.warning(f"Failed to initialize audio: {e}")
+                self.audio_manager = None
             
             # Initialize advanced graphics systems with error handling
             self._initialize_graphics_systems()
@@ -467,10 +499,37 @@ class Game:
         self.app.accept('escape', self.handle_escape)
         # F5 key for toggling debug lights
         self.app.accept('f5', self.toggle_debug_lights)
+        # F9 to save, F10 to load
+        self.app.accept('f9', self.save_game)
+        self.app.accept('f10', self.load_game)
 
         # Ensure mouse is visible for UI interaction
         if hasattr(self.app, 'enableMouse'):
             self.app.enableMouse()
+
+    def save_game(self):
+        """Save the current game state."""
+        if self.save_manager:
+            if self.save_manager.save_game(self, slot=1):
+                if self.ui_manager:
+                    self.ui_manager.show_message("Game Saved!", 2.0, (0.3, 1.0, 0.3, 1.0))
+            else:
+                if self.ui_manager:
+                    self.ui_manager.show_message("Save Failed!", 2.0, (1.0, 0.3, 0.3, 1.0))
+
+    def load_game(self):
+        """Load the game state from save."""
+        if self.save_manager and self.save_manager.has_save(1):
+            if self.save_manager.load_game(self, slot=1):
+                if self.ui_manager:
+                    self.ui_manager.show_message("Game Loaded!", 2.0, (0.3, 1.0, 0.3, 1.0))
+                self._sync_hud_objectives(force=True)
+            else:
+                if self.ui_manager:
+                    self.ui_manager.show_message("Load Failed!", 2.0, (1.0, 0.3, 0.3, 1.0))
+        else:
+            if self.ui_manager:
+                self.ui_manager.show_message("No Save Found!", 2.0, (1.0, 0.8, 0.3, 1.0))
 
     def handle_escape(self):
         """Handle escape key press for pause menu."""
@@ -682,32 +741,25 @@ class Game:
         """Spawn initial animals in the game world using config values."""
         animal_cfg = config.ANIMAL_CONFIG
         spawn_radius = animal_cfg['spawn_radius']
-        logging.info(f"Starting animal spawn with spawn_radius={spawn_radius}, deer_count={animal_cfg['deer_count']}, rabbit_count={animal_cfg['rabbit_count']}")
+        logging.info(f"Starting animal spawn with spawn_radius={spawn_radius}")
 
-        deer_positions = []
-        scenic_deer_spawns = [(22, 32), (-26, 20), (10, 38)]
-        for sx, sy in scenic_deer_spawns:
-            if len(deer_positions) >= animal_cfg['deer_count']:
-                break
-            deer_positions.append((sx, sy))
+        def _spawn_positions(count, scenic):
+            positions = list(scenic)
+            attempts = 0
+            max_attempts = min(10000, count * 1000)
+            while len(positions) < count:
+                attempts += 1
+                if attempts > max_attempts:
+                    break
+                x = random.uniform(-spawn_radius, spawn_radius)
+                y = random.uniform(-spawn_radius, spawn_radius)
+                if x ** 2 + y ** 2 < (spawn_radius * 0.2) ** 2:
+                    continue
+                positions.append((x, y))
+            return positions
 
-        deer_spawn_attempts = 0
-        max_spawn_attempts = min(10000, animal_cfg['deer_count'] * 1000)  # Dynamic limit based on requested count
-        while len(deer_positions) < animal_cfg['deer_count']:
-            deer_spawn_attempts += 1
-            if deer_spawn_attempts > max_spawn_attempts:  # Safety check for infinite loop
-                logging.error(f"Infinite loop detected in deer spawning after {deer_spawn_attempts} attempts. spawn_radius={spawn_radius}")
-                logging.warning(f"Failed to spawn all {animal_cfg['deer_count']} deer. Spawned {len(deer_positions)} instead.")
-                break
-            x = random.uniform(-spawn_radius, spawn_radius)
-            y = random.uniform(-spawn_radius, spawn_radius)
-            # Use consistent exclusion radius based on spawn_radius configuration
-            if x ** 2 + y ** 2 < (spawn_radius * 0.2) ** 2:  # Keep animals away from spawn area (20% of spawn radius)
-                continue
-            deer_positions.append((x, y))
-        logging.info(f"Deer spawning completed with {len(deer_positions)} positions after {deer_spawn_attempts} attempts")
-
-        for x, y in deer_positions:
+        # Spawn deer
+        for x, y in _spawn_positions(animal_cfg['deer_count'], [(22, 32), (-26, 20), (10, 38)]):
             z = self.terrain.get_height(x, y) if self.terrain else 0.0
             deer = Deer(Vec3(x, y, z))
             deer.render(self.app.render)
@@ -715,30 +767,8 @@ class Game:
             if self.player:
                 self.player.add_animal_to_collision(deer)
 
-        rabbit_positions = []
-        scenic_rabbit_spawns = [(8, -6), (-12, -14), (6, 18)]
-        for sx, sy in scenic_rabbit_spawns:
-            if len(rabbit_positions) >= animal_cfg['rabbit_count']:
-                break
-            rabbit_positions.append((sx, sy))
-
-        rabbit_spawn_attempts = 0
-        max_spawn_attempts = min(10000, animal_cfg['rabbit_count'] * 1000)  # Dynamic limit based on requested count
-        while len(rabbit_positions) < animal_cfg['rabbit_count']:
-            rabbit_spawn_attempts += 1
-            if rabbit_spawn_attempts > max_spawn_attempts:  # Safety check for infinite loop
-                logging.error(f"Infinite loop detected in rabbit spawning after {rabbit_spawn_attempts} attempts. spawn_radius={spawn_radius}")
-                logging.warning(f"Failed to spawn all {animal_cfg['rabbit_count']} rabbits. Spawned {len(rabbit_positions)} instead.")
-                break
-            x = random.uniform(-spawn_radius, spawn_radius)
-            y = random.uniform(-spawn_radius, spawn_radius)
-            # Use consistent exclusion radius based on spawn_radius configuration
-            if x ** 2 + y ** 2 < (spawn_radius * 0.2) ** 2:  # Keep animals away from spawn area (20% of spawn radius)
-                continue
-            rabbit_positions.append((x, y))
-        logging.info(f"Rabbit spawning completed with {len(rabbit_positions)} positions after {rabbit_spawn_attempts} attempts")
-
-        for x, y in rabbit_positions:
+        # Spawn rabbits
+        for x, y in _spawn_positions(animal_cfg['rabbit_count'], [(8, -6), (-12, -14), (6, 18)]):
             z = self.terrain.get_height(x, y) if self.terrain else 0.0
             rabbit = Rabbit(Vec3(x, y, z))
             rabbit.render(self.app.render)
@@ -746,8 +776,33 @@ class Game:
             if self.player:
                 self.player.add_animal_to_collision(rabbit)
 
+        # Spawn bears
+        for x, y in _spawn_positions(animal_cfg.get('bear_count', 3), [(-40, -40), (45, 30), (-30, 50)]):
+            z = self.terrain.get_height(x, y) if self.terrain else 0.0
+            bear = Bear(Vec3(x, y, z))
+            bear.render(self.app.render)
+            self.animals.append(bear)
+            if self.player:
+                self.player.add_animal_to_collision(bear)
+
+        # Spawn wolves
+        for x, y in _spawn_positions(animal_cfg.get('wolf_count', 5), [(35, -35), (-50, 10), (20, 55)]):
+            z = self.terrain.get_height(x, y) if self.terrain else 0.0
+            wolf = Wolf(Vec3(x, y, z))
+            wolf.render(self.app.render)
+            self.animals.append(wolf)
+            if self.player:
+                self.player.add_animal_to_collision(wolf)
+
+        # Spawn birds (flying, so higher z)
+        for x, y in _spawn_positions(animal_cfg.get('bird_count', 12), [(0, 0), (30, 30), (-30, -30), (40, -20)]):
+            bird = Bird(Vec3(x, y, 0))
+            bird.render(self.app.render)
+            self.animals.append(bird)
+
         self.animal_targets = self._current_animal_counts()
         self._sync_hud_objectives(force=True)
+        logging.info(f"Animal spawning complete. Total animals: {len(self.animals)}")
 
     def _current_animal_counts(self) -> Dict[str, int]:
         counts: Dict[str, int] = {}
@@ -926,6 +981,11 @@ class Game:
 
                             if not animal.is_dead():
                                 alive_animals.append(animal)
+                                # Predator damage to player
+                                species = getattr(animal, 'species', '')
+                                distance = (player_pos - animal.position).length()
+                                if species in ('bear', 'wolf') and distance < getattr(animal, 'attack_range', 8.0) and hasattr(animal, 'damage'):
+                                    self.player.take_damage(animal.damage * dt)
                             else:
                                 # Handle animal death - add score
                                 self.handle_animal_killed(animal)
@@ -943,8 +1003,48 @@ class Game:
                     self.animals = alive_animals
                     self._sync_hud_objectives()
 
+                    # Update minimap and time on HUD
+                    if self.ui_manager and self.ui_manager.hud:
+                        try:
+                            self.ui_manager.hud.update_minimap(player_pos, alive_animals)
+                        except Exception:
+                            pass
+                        try:
+                            virtual_hour = (self.game_time * 0.016) % 24
+                            self.ui_manager.hud.update_time(virtual_hour)
+                        except Exception:
+                            pass
+
                 except Exception as e:
                     logging.error(f"Error updating animals: {e}")
+
+                # Update audio manager
+                try:
+                    if self.audio_manager and self.player:
+                        is_moving = any([
+                            self.player.movement.get('forward', False),
+                            self.player.movement.get('backward', False),
+                            self.player.movement.get('left', False),
+                            self.player.movement.get('right', False)
+                        ])
+                        weather_type = 'clear'
+                        weather_strength = 0.0
+                        if self.weather_system:
+                            weather_type = getattr(self.weather_system, 'current_weather', 'clear')
+                            weather_strength = getattr(self.weather_system, 'transition_progress', 0.0)
+                        self.audio_manager.update(dt, self.player.position, is_moving, self.player.is_sprinting, weather_type, weather_strength)
+                except Exception as e:
+                    logging.debug(f"Audio update error: {e}")
+
+                # Auto-save
+                try:
+                    if self.save_manager and config.SAVE_CONFIG.get('auto_save_interval', 300.0):
+                        self._auto_save_timer += dt
+                        if self._auto_save_timer >= config.SAVE_CONFIG['auto_save_interval']:
+                            self._auto_save_timer = 0.0
+                            self.save_manager.save_game(self, slot=1)
+                except Exception as e:
+                    logging.debug(f"Auto-save error: {e}")
 
                 # Check for game over conditions (e.g., player health)
                 try:
@@ -1077,7 +1177,7 @@ class Game:
         logging.info("Hunting Simulator Game Stopped")
 
     def handle_animal_killed(self, animal):
-        """Handle when an animal is killed - update score and statistics."""
+        """Handle when an animal is killed - update score, statistics, and effects."""
         if self.ui_manager and self.ui_manager.hud and animal:
             # Award points based on animal type
             points = 10  # Base points
@@ -1089,6 +1189,16 @@ class Game:
                     points = 50
                 elif species_lower == 'rabbit':
                     points = 25
+                elif species_lower == 'bear':
+                    points = 150
+                elif species_lower == 'wolf':
+                    points = 100
+                elif species_lower == 'bird':
+                    points = 15
+            
+            # Apply difficulty score multiplier
+            diff_cfg = config.DIFFICULTY_CONFIG.get(self.difficulty, {})
+            points = int(points * diff_cfg.get('score_multiplier', 1.0))
             
             self.ui_manager.add_score(points)
             self.ui_manager.record_shot(hit=True)
@@ -1099,6 +1209,13 @@ class Game:
                 self.ui_manager.show_message(f"{species_name} killed! +{points} points", 2.0)
             else:
                 self.ui_manager.show_message(f"Animal killed! +{points} points", 2.0)
+            
+            # Play death sound
+            try:
+                if self.audio_manager:
+                    self.audio_manager.play_death(animal.position)
+            except Exception:
+                pass
 
     def cleanup_game(self):
         """Clean up current game session for restart."""

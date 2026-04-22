@@ -5,30 +5,98 @@ Contains game settings that can be easily modified.
 
 # Terrain settings
 TERRAIN_CONFIG = {
-    'width': 100,          # Terrain width in units
-    'height': 100,         # Terrain height in units
+    'width': 300,          # Terrain width in units
+    'height': 300,         # Terrain height in units
     'scale': 1.0,          # Scale factor for terrain
-    'octaves': 4,          # Number of noise octaves
+    'octaves': 5,          # Number of noise octaves
     'seed': 42             # Random seed for reproducible terrain
 }
 
 # Animal settings
 ANIMAL_CONFIG = {
-    'deer_count': 10,      # Increased number of deer to spawn
-    'rabbit_count': 15,    # More rabbits for better environment activity  
-    'spawn_radius': 50,    # Larger spawn area for more exploration
+    'deer_count': 15,
+    'rabbit_count': 20,
+    'bear_count': 3,
+    'wolf_count': 5,
+    'bird_count': 12,
+    'spawn_radius': 120,   # Larger spawn area for more exploration
     'deer': {
         'speed': 6.0,
         'detection_range': 60.0,
         'flee_range': 40.0,
-        'size': 2.5      # Larger deer for better visibility
+        'size': 2.5
     },
     'rabbit': {
         'speed': 4.0,
         'detection_range': 30.0,
         'flee_range': 20.0,
-        'size': 1.8      # Larger rabbit for better visibility
+        'size': 1.8
+    },
+    'bear': {
+        'speed': 5.5,
+        'detection_range': 70.0,
+        'flee_range': 15.0,
+        'size': 4.0
+    },
+    'wolf': {
+        'speed': 8.0,
+        'detection_range': 80.0,
+        'flee_range': 25.0,
+        'size': 2.2
+    },
+    'bird': {
+        'speed': 12.0,
+        'detection_range': 40.0,
+        'flee_range': 20.0,
+        'size': 0.8
     }
+}
+
+# Difficulty settings
+DIFFICULTY_CONFIG = {
+    'easy': {
+        'animal_health_multiplier': 0.7,
+        'animal_speed_multiplier': 0.7,
+        'player_damage_multiplier': 1.5,
+        'ammo_scarcity': 0.5,
+        'predator_aggression': 0.3,
+        'hunger_thirst_rate': 0.5,
+        'score_multiplier': 0.8
+    },
+    'normal': {
+        'animal_health_multiplier': 1.0,
+        'animal_speed_multiplier': 1.0,
+        'player_damage_multiplier': 1.0,
+        'ammo_scarcity': 1.0,
+        'predator_aggression': 0.6,
+        'hunger_thirst_rate': 1.0,
+        'score_multiplier': 1.0
+    },
+    'hard': {
+        'animal_health_multiplier': 1.4,
+        'animal_speed_multiplier': 1.2,
+        'player_damage_multiplier': 0.7,
+        'ammo_scarcity': 1.5,
+        'predator_aggression': 1.0,
+        'hunger_thirst_rate': 1.5,
+        'score_multiplier': 1.5
+    },
+    'extreme': {
+        'animal_health_multiplier': 2.0,
+        'animal_speed_multiplier': 1.5,
+        'player_damage_multiplier': 0.5,
+        'ammo_scarcity': 2.0,
+        'predator_aggression': 1.5,
+        'hunger_thirst_rate': 2.0,
+        'score_multiplier': 2.5
+    }
+}
+
+# Save game settings
+SAVE_CONFIG = {
+    'save_file': 'savegame.json',
+    'auto_save_interval': 300.0,  # Auto-save every 5 minutes
+    'max_save_slots': 3
 }
 
 # Game settings

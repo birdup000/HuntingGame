@@ -198,22 +198,19 @@ class CinematicEffects:
         self.motion_blur_active = False
         self.depth_of_field_active = False
         self.color_grading_active = False
-        
-    def enable_motion_blur(self, strength=0.5):
-        """Add motion blur for cinematic movement."""
-        print("Motion blur not implemented")
-        
-    def enable_depth_of_field(self, focus_distance=20.0, blur_amount=0.7):
-        """Simulate camera depth of field."""
-        print("Depth of field not implemented")
-        
-    def set_chromatic_aberration(self, amount=0.01):
-        """Add subtle chromatic aberration for camera realism."""
-        print("Chromatic aberration not implemented")
+        self._vignette_quad = None
         
     def add_vignette(self, intensity=0.3):
         """Add darkened edges for cinematic look."""
-        print("Vignette not implemented")
+        if self._vignette_quad:
+            return
+        from panda3d.core import CardMaker, TransparencyAttrib
+        cm = CardMaker('vignette')
+        cm.setFrameFullscreenQuad()
+        self._vignette_quad = self.base.render2d.attachNewNode(cm.generate())
+        self._vignette_quad.setTransparency(TransparencyAttrib.MAlpha)
+        self._vignette_quad.setColor(0, 0, 0, intensity)
+        self._vignette_quad.setBin('fixed', 100)
 
 
 # Common post-processing presets

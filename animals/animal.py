@@ -782,3 +782,213 @@ class Rabbit(Animal):
         root.setScale(0.9)
         root.flattenLight()
         return root
+
+
+class Bear(Animal):
+    """Bear animal class - dangerous predator that can attack player."""
+
+    def __init__(self, position: Vec3 = Vec3(0, 0, 0)):
+        super().__init__(position, "bear")
+        self.speed = 5.5
+        self.detection_range = 70.0
+        self.flee_range = 15.0  # Bears don't flee easily
+        self.attack_range = 8.0
+        self.health = 200.0
+        self.max_health = 200.0
+        self.damage = 25.0
+        self.is_aggressive = True
+        self.height_offset = 0.0
+
+    def create_model(self) -> Union[GeomNode, NodePath]:
+        """Create a robust bear model with thick body and strong limbs."""
+        fur_color = Vec4(0.38, 0.28, 0.18, 1.0)
+        snout_color = Vec4(0.22, 0.16, 0.1, 1.0)
+        claw_color = Vec4(0.15, 0.12, 0.08, 1.0)
+
+        root = NodePath('bear_model')
+
+        body = root.attachNewNode(self._create_box_geom(4.2, 2.4, 2.2, fur_color, 'bear_body'))
+        body.setZ(1.6)
+
+        chest = root.attachNewNode(self._create_box_geom(2.2, 2.0, 2.0, fur_color, 'bear_chest'))
+        chest.setPos(1.8, 0, 1.8)
+
+        neck = root.attachNewNode(self._create_box_geom(1.2, 1.0, 1.2, fur_color, 'bear_neck'))
+        neck.setPos(3.0, 0, 2.4)
+        neck.setP(-15)
+
+        head = root.attachNewNode(self._create_box_geom(1.4, 1.2, 1.2, fur_color, 'bear_head'))
+        head.setPos(3.8, 0, 2.8)
+
+        snout = root.attachNewNode(self._create_box_geom(0.9, 0.7, 0.6, snout_color, 'bear_snout'))
+        snout.setPos(4.6, 0, 2.6)
+
+        ear_geom = self._create_box_geom(0.5, 0.35, 0.5, fur_color, 'bear_ear')
+        for offset in ((3.6, 0.5, 3.4), (3.6, -0.5, 3.4)):
+            ear = root.attachNewNode(ear_geom)
+            ear.setPos(*offset)
+            ear.setH(15 if offset[1] > 0 else -15)
+
+        leg_geom = self._create_box_geom(0.65, 0.65, 1.6, fur_color, 'bear_leg')
+        leg_positions = [
+            (-1.4, 0.9, 0.8),
+            (-1.4, -0.9, 0.8),
+            (1.4, 0.9, 0.8),
+            (1.4, -0.9, 0.8)
+        ]
+        for pos in leg_positions:
+            leg = root.attachNewNode(leg_geom)
+            leg.setPos(*pos)
+
+        claw_geom = self._create_box_geom(0.25, 0.2, 0.3, claw_color, 'bear_claw')
+        for pos in leg_positions:
+            claw = root.attachNewNode(claw_geom)
+            claw.setPos(pos[0], pos[1], pos[2] - 0.9)
+
+        root.setScale(1.1)
+        root.flattenLight()
+        return root
+
+    def update(self, dt, player_position, terrain_height=0.0, food_positions=None, water_positions=None, nearby_animals=None):
+        """Bear-specific update: aggressive behavior toward player."""
+        if self.state == AnimalState.DEAD:
+            return
+        # Bears become alerted at longer range and may attack instead of flee
+        distance = (player_position - self.position).length()
+        if distance <= self.attack_range and self.is_aggressive:
+            self.state = AnimalState.FLEEING  # Reuse fleeing state for charging
+            self.state_timer = 0.0
+            # Charge toward player instead of away
+            self.velocity = (player_position - self.position).normalized() * self.speed * 1.2
+        super().update(dt, player_position, terrain_height, food_positions, water_positions, nearby_animals)
+
+
+class Wolf(Animal):
+    """Wolf animal class - pack hunter with fast movement."""
+
+    def __init__(self, position: Vec3 = Vec3(0, 0, 0)):
+        super().__init__(position, "wolf")
+        self.speed = 8.0
+        self.detection_range = 80.0
+        self.flee_range = 25.0
+        self.attack_range = 6.0
+        self.health = 80.0
+        self.max_health = 80.0
+        self.damage = 15.0
+        self.height_offset = 0.0
+
+    def create_model(self) -> Union[GeomNode, NodePath]:
+        """Create a lean wolf model with pointed features."""
+        fur_color = Vec4(0.45, 0.45, 0.48, 1.0)
+        underbelly = Vec4(0.62, 0.62, 0.64, 1.0)
+
+        root = NodePath('wolf_model')
+
+        body = root.attachNewNode(self._create_box_geom(2.6, 1.0, 1.1, fur_color, 'wolf_body'))
+        body.setZ(1.0)
+
+        chest = root.attachNewNode(self._create_box_geom(1.2, 0.9, 1.0, underbelly, 'wolf_chest'))
+        chest.setPos(0.8, 0, 1.1)
+
+        neck = root.attachNewNode(self._create_box_geom(1.0, 0.6, 0.9, fur_color, 'wolf_neck'))
+        neck.setPos(1.6, 0, 1.5)
+        neck.setP(-25)
+
+        head = root.attachNewNode(self._create_box_geom(1.0, 0.65, 0.65, fur_color, 'wolf_head'))
+        head.setPos(2.2, 0, 1.8)
+        head.setP(10)
+
+        snout = root.attachNewNode(self._create_box_geom(0.6, 0.35, 0.35, Vec4(0.3, 0.3, 0.32, 1.0), 'wolf_snout'))
+        snout.setPos(2.8, 0, 1.75)
+
+        ear_geom = self._create_box_geom(0.5, 0.2, 0.5, fur_color, 'wolf_ear')
+        for offset in ((2.4, 0.25, 2.2), (2.4, -0.25, 2.2)):
+            ear = root.attachNewNode(ear_geom)
+            ear.setPos(*offset)
+            ear.setH(20 if offset[1] > 0 else -20)
+
+        leg_geom = self._create_box_geom(0.28, 0.28, 1.0, fur_color, 'wolf_leg')
+        leg_positions = [
+            (-0.8, 0.35, 0.5),
+            (-0.8, -0.35, 0.5),
+            (0.8, 0.35, 0.5),
+            (0.8, -0.35, 0.5)
+        ]
+        for pos in leg_positions:
+            leg = root.attachNewNode(leg_geom)
+            leg.setPos(*pos)
+
+        tail = root.attachNewNode(self._create_box_geom(1.2, 0.25, 0.25, fur_color, 'wolf_tail'))
+        tail.setPos(-1.4, 0, 1.4)
+        tail.setP(25)
+
+        root.setScale(0.85)
+        root.flattenLight()
+        return root
+
+
+class Bird(Animal):
+    """Bird animal class - flying wildlife that adds atmosphere."""
+
+    def __init__(self, position: Vec3 = Vec3(0, 0, 0)):
+        super().__init__(position, "bird")
+        self.speed = 12.0
+        self.detection_range = 40.0
+        self.flee_range = 20.0
+        self.health = 15.0
+        self.max_health = 15.0
+        self.flight_height = 15.0 + random.uniform(-5, 5)
+        self.circle_center = Vec3(position.x, position.y, 0)
+        self.circle_radius = random.uniform(10, 30)
+        self.angle = random.uniform(0, 2 * math.pi)
+        self.height_offset = self.flight_height
+
+    def create_model(self) -> Union[GeomNode, NodePath]:
+        """Create a simple bird model."""
+        body_color = Vec4(0.72, 0.55, 0.32, 1.0)
+        wing_color = Vec4(0.55, 0.42, 0.25, 1.0)
+
+        root = NodePath('bird_model')
+
+        body = root.attachNewNode(self._create_box_geom(0.5, 0.35, 0.35, body_color, 'bird_body'))
+        body.setZ(0.2)
+
+        head = root.attachNewNode(self._create_box_geom(0.3, 0.25, 0.28, body_color, 'bird_head'))
+        head.setPos(0.4, 0, 0.35)
+
+        beak = root.attachNewNode(self._create_box_geom(0.2, 0.08, 0.08, Vec4(0.9, 0.75, 0.2, 1.0), 'bird_beak'))
+        beak.setPos(0.6, 0, 0.32)
+
+        wing_geom = self._create_box_geom(0.6, 0.08, 0.25, wing_color, 'bird_wing')
+        for offset in ((0.1, 0.25, 0.25), (0.1, -0.25, 0.25)):
+            wing = root.attachNewNode(wing_geom)
+            wing.setPos(*offset)
+            wing.setH(15 if offset[1] > 0 else -15)
+
+        tail = root.attachNewNode(self._create_box_geom(0.4, 0.2, 0.08, wing_color, 'bird_tail'))
+        tail.setPos(-0.4, 0, 0.25)
+        tail.setP(20)
+
+        root.setScale(0.6)
+        root.flattenLight()
+        return root
+
+    def update(self, dt, player_position, terrain_height=0.0, food_positions=None, water_positions=None, nearby_animals=None):
+        """Bird-specific update: circular flight pattern."""
+        if self.state == AnimalState.DEAD:
+            return
+        self.state_timer += dt
+        # Birds circle in the sky
+        self.angle += self.speed * 0.15 * dt
+        self.position.x = self.circle_center.x + math.cos(self.angle) * self.circle_radius
+        self.position.y = self.circle_center.y + math.sin(self.angle) * self.circle_radius
+        self.position.z = self.flight_height + math.sin(self.angle * 3) * 1.5
+        # Flee if player gets too close
+        if (player_position - self.position).length() < self.flee_range:
+            self.circle_center += (self.position - player_position).normalized() * self.speed * dt * 2
+        if self.node:
+            self.node.setPos(self.position)
+            # Face direction of travel
+            next_x = self.circle_center.x + math.cos(self.angle + 0.1) * self.circle_radius
+            next_y = self.circle_center.y + math.sin(self.angle + 0.1) * self.circle_radius
+            self.node.lookAt(next_x, next_y, self.position.z)

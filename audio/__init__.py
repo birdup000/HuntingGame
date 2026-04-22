@@ -1,6 +1,7 @@
-"""
-Audio module for the 3D Hunting Simulator.
-Handles sound management and audio effects.
-"""
+"""Audio package for the 3D Hunting Simulator."""
 
-__all__ = []  # Add exported classes here
+try:
+    from audio.audio_manager import AudioManager
+    __all__ = ['AudioManager']
+except ImportError:
+    __all__ = []

@@ -5,7 +5,7 @@ Handles heads-up display elements like health, ammo, crosshair, and score.
 
 import logging
 import os
-import pygame
+import math
 from typing import Optional, Tuple, Dict
 
 from panda3d.core import Vec4, TextNode, TransparencyAttrib, Filename
@@ -44,7 +44,11 @@ class HUD:
             'score': None,
             'accuracy': None,
             'kills': None,
-            'objective': None
+            'objective': None,
+            'stamina': None,
+            'hunger': None,
+            'thirst': None,
+            'time': None
         }
         self._idle_time = 0.0
         self.fade_delay = 2.6
@@ -57,12 +61,6 @@ class HUD:
         }
         self._objective_dirty = False
 
-        # Initialize Pygame for 2D rendering
-        self.pygame_initialized = False
-        self.screen = None
-        self.font = None
-        self.setup_pygame()
-
         # Create HUD elements
         self.hud_elements = []
         self.hud_panels = []
@@ -74,10 +72,14 @@ class HUD:
         self.crosshair_color_empty = Vec4(1.0, 0.65, 0.2, 1.0)
         self.crosshair_color_reload = Vec4(1.0, 0.25, 0.25, 1.0)
 
-    def setup_pygame(self):
-        """Disable Pygame to avoid rendering conflicts - use Panda3D only."""
-        self.pygame_initialized = False
-        logging.info("Pygame disabled - using Panda3D UI only")
+        # Minimap
+        self.minimap_panel = None
+        self.minimap_dots = []
+        self._setup_minimap()
+
+        # Time display
+        self.time_text = None
+        self._setup_time_display()
 
     def _register_panel(self, panel: DirectFrame) -> DirectFrame:
         self.hud_panels.append(panel)
@@ -355,19 +357,66 @@ class HUD:
         if self.pygame_initialized:
             self.render_pygame_overlay()
 
-    def render_pygame_overlay(self):
-        """Render additional 2D elements using Pygame."""
-        if not self.screen:
+    def _setup_minimap(self):
+        """Create a simple minimap showing player and animal positions."""
+        hud_parent = getattr(self.app, 'aspect2d', getattr(self.app, 'render2d', None))
+        if hud_parent is None:
             return
+        self.minimap_panel = self._register_panel(DirectFrame(
+            parent=hud_parent,
+            frameColor=(0.05, 0.07, 0.09, 0.85),
+            frameSize=(-0.22, 0.22, -0.22, 0.22),
+            pos=(1.18, 0, 0.62)
+        ))
+        self.minimap_panel.setTransparency(TransparencyAttrib.MAlpha)
+        self.minimap_title = self._create_text("Radar", self.minimap_panel, (0, 0.17), 0.04, self.theme['accent'], TextNode.ACenter)
 
-        # Clear the surface
-        self.screen.fill((0, 0, 0, 0))
+    def update_minimap(self, player_pos, animals):
+        """Update minimap dots for player and animals."""
+        # Clear old dots
+        for dot in self.minimap_dots:
+            if hasattr(dot, 'destroy'):
+                dot.destroy()
+            elif hasattr(dot, 'removeNode'):
+                dot.removeNode()
+        self.minimap_dots = []
+        if not self.minimap_panel:
+            return
+        # Player dot (white center)
+        from direct.gui.DirectGui import DirectFrame
+        player_dot = DirectFrame(parent=self.minimap_panel, frameColor=(1, 1, 1, 1), frameSize=(-0.015, 0.015, -0.015, 0.015), pos=(0, 0, 0))
+        self.minimap_dots.append(player_dot)
+        # Animal dots
+        for animal in animals:
+            if getattr(animal, 'is_dead', lambda: True)():
+                continue
+            dx = (animal.position.x - player_pos.x) * 0.008
+            dy = (animal.position.y - player_pos.y) * 0.008
+            if abs(dx) > 0.18 or abs(dy) > 0.18:
+                continue
+            species = getattr(animal, 'species', 'unknown')
+            color = (0.9, 0.3, 0.3, 0.9) if species == 'deer' else (0.3, 0.9, 0.3, 0.9) if species == 'rabbit' else (0.9, 0.9, 0.3, 0.9)
+            dot = DirectFrame(parent=self.minimap_panel, frameColor=color, frameSize=(-0.01, 0.01, -0.01, 0.01), pos=(dx, 0, dy))
+            self.minimap_dots.append(dot)
 
-        # Draw additional HUD elements if needed
-        # This can be extended for more complex 2D UI elements
+    def _setup_time_display(self):
+        """Create day/night time display on HUD."""
+        hud_parent = getattr(self.app, 'aspect2d', getattr(self.app, 'render2d', None))
+        if hud_parent is None:
+            return
+        self.time_text = self._create_text("12:00 PM", hud_parent, (0, -0.82), 0.04, self.theme['secondary_text'], TextNode.ACenter)
 
-        # Convert Pygame surface to Panda3D texture if needed
-        # This is optional and can be used for more complex 2D rendering
+    def update_time(self, virtual_hour: float):
+        """Update time display."""
+        if self.time_text is None:
+            return
+        hour = int(virtual_hour) % 24
+        minute = int((virtual_hour % 1) * 60)
+        ampm = "AM" if hour < 12 else "PM"
+        display_hour = hour if hour <= 12 else hour - 12
+        if display_hour == 0:
+            display_hour = 12
+        self.time_text.setText(f"{display_hour}:{minute:02d} {ampm}")
 
     def _set_opacity(self, opacity: float):
         if abs(opacity - self._current_opacity) <= 0.01:
@@ -531,9 +580,12 @@ class HUD:
             self.crosshair_image.destroy()
             self.crosshair_image = None
 
-        # Clean up Pygame
-        if self.pygame_initialized:
-            pygame.quit()
-            self.pygame_initialized = False
+        # Clean up minimap dots
+        for dot in getattr(self, 'minimap_dots', []):
+            if hasattr(dot, 'destroy'):
+                dot.destroy()
+            elif hasattr(dot, 'removeNode'):
+                dot.removeNode()
+        self.minimap_dots = []
 
         logging.info("HUD cleanup completed")
