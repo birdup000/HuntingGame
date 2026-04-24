@@ -115,7 +115,8 @@ class CollisionManager:
                 collision_np.setPythonTag('animal', animal)
                 self.traverser.addCollider(collision_np, self.handler)
                 
-                # Store reference
+                # Store reference on animal object AND in dictionary
+                animal.collision_np = collision_np
                 self.animals[str(id(animal))] = animal
                 
         except Exception as e:
@@ -183,7 +184,7 @@ class CollisionManager:
             logging.error(f"Error adding projectile to collision detection: {e}")
 
     def remove_projectile(self, projectile: 'Projectile'):
-        """Remove a collision node from collision detection."""
+        """Remove a projectile from collision detection."""
         if not projectile:
             return
             
@@ -194,21 +195,23 @@ class CollisionManager:
                 if projectile_id in self.projectiles:
                     del self.projectiles[projectile_id]
                     
-            # Remove collision node
+            # Remove collision node from traverser
             if projectile.collision_np:
                 try:
-                    if projectile.collision_np in self.traverser.getColliders():
+                    colliders = self.traverser.getColliders()
+                    if projectile.collision_np in colliders:
                         self.traverser.removeCollider(projectile.collision_np)
-                        
-                    if projectile.collision_np.hasParent():
-                        projectile.collision_np.removeNode()
-                        
-                        # Clear collision reference
-                        projectile.collision_np = None
-                        
                 except Exception as e:
-                    logging.error(f"Error removing projectile collision node: {e}")
+                    logging.debug(f"Traverser removal error: {e}")
                     
+                try:
+                    if projectile.collision_np and not projectile.collision_np.isEmpty():
+                        projectile.collision_np.removeNode()
+                except Exception:
+                    pass
+                    
+                projectile.collision_np = None
+                
         except Exception as error:
             logging.error(f"Error in remove_projectile: {error}")
             raise

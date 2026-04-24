@@ -591,11 +591,26 @@ class Player:
                     
                     self.camera_node.setPos(camera_pos)
 
-        # Update weapon reload
+        # Update weapon reload — transfer ammo when reload completes
         if hasattr(self.app, 'taskMgr') and self.app.taskMgr is not None:
             current_time = self.app.taskMgr.globalClock.getFrameTime()
-            if self.current_weapon:
-                self.current_weapon.update_reload(current_time)
+            if self.current_weapon and self.current_weapon.reloading:
+                was_reloading = self.current_weapon.reloading
+                completed = self.current_weapon.update_reload(current_time)
+                if completed and was_reloading:
+                    # Reload just finished — transfer ammo now
+                    ammo_type = getattr(self, '_pending_reload_ammo_type', None)
+                    if not ammo_type:
+                        ammo_type = f"{self.current_weapon.weapon_type}_ammo"
+                        if self.current_weapon.weapon_type == "bow":
+                            ammo_type = "arrow"
+                    available = self.inventory.get_ammo(ammo_type)
+                    ammo_to_transfer = min(available, self.current_weapon.max_ammo - self.current_weapon.current_ammo)
+                    if ammo_to_transfer > 0:
+                        self.current_weapon.current_ammo += ammo_to_transfer
+                        self.inventory.add_ammo(ammo_type, -ammo_to_transfer)
+                        logging.info(f"Reloaded {self.current_weapon.name} with {ammo_to_transfer} rounds!")
+                    self._pending_reload_ammo_type = None
 
         # Update collision detection
         if self.collision_manager:
@@ -695,13 +710,13 @@ class Player:
             logging.debug(f"Shot fired with {self.current_weapon.name}! Ammo remaining: {self.inventory.get_ammo(ammo_type)}")
 
     def reload_weapon(self):
-        """Handle weapon reload input."""
+        """Handle weapon reload input. Ammo is transferred only when reload timer completes."""
         if not self.current_weapon or not hasattr(self.app, 'taskMgr'):
             return
             
         current_time = self.app.taskMgr.globalClock.getFrameTime()
         
-        # Start reload animation first
+        # Start reload timer — ammo is NOT transferred here
         if not self.current_weapon.reload(current_time):
             return  # Already reloading or full
         
@@ -710,18 +725,15 @@ class Player:
         if self.current_weapon.weapon_type == "bow":
             ammo_type = "arrow"
             
-        # Check if ammo is available for reload
+        # Check if ammo is available for reload (but don't transfer yet)
         available_ammo = self.inventory.get_ammo(ammo_type)
-        if available_ammo > 0:
-            # Transfer ammo from inventory to weapon
-            ammo_to_transfer = min(available_ammo, self.current_weapon.max_ammo - self.current_weapon.current_ammo)
-            self.current_weapon.current_ammo += ammo_to_transfer
-            self.inventory.add_ammo(ammo_type, -ammo_to_transfer)
-            
-            logging.info(f"Reloaded {self.current_weapon.name} with {ammo_to_transfer} rounds!")
-        else:
+        if available_ammo <= 0:
             logging.warning("No ammo available for reload!")
             self.current_weapon.reloading = False  # Cancel reload if no ammo
+        else:
+            # Store pending reload info for completion in update()
+            self._pending_reload_ammo_type = ammo_type
+            logging.info(f"Reloading {self.current_weapon.name}...")
 
     def _spawn_muzzle_flash(self, position: Vec3, direction: Vec3):
         """Create a brief muzzle flash visual effect."""
@@ -748,21 +760,23 @@ class Player:
         """Update all active projectiles with proper memory management."""
         active_projectiles = []
 
-        for projectile in self.projectiles[:]:  # Iterate over copy to avoid modification during iteration
+        for projectile in self.projectiles[:]:
             try:
-                if projectile.update(dt):
+                if projectile.active and projectile.update(dt):
                     active_projectiles.append(projectile)
                 else:
                     # Remove from collision manager before cleanup
-                    if self.collision_manager and hasattr(self.collision_manager, 'remove_projectile'):
+                    if self.collision_manager:
                         self.collision_manager.remove_projectile(projectile)
-                    # Clean up projectile
-                    if hasattr(projectile, 'cleanup'):
-                        projectile.cleanup()
-                    # Clear reference
-                    projectile = None
+                    projectile.cleanup()
             except Exception:
-                # Skip problematic projectiles to prevent crashes
+                # Force cleanup on error
+                try:
+                    if self.collision_manager:
+                        self.collision_manager.remove_projectile(projectile)
+                    projectile.cleanup()
+                except Exception:
+                    pass
                 continue
 
         self.projectiles = active_projectiles

@@ -186,9 +186,34 @@ class PostProcessing:
         pass
 
     def enable_motion_blur(self, strength=0.5):
-        """Enable motion blur effect."""
-        # Motion blur requires velocity buffer — stub for future implementation
-        pass
+        """Enable motion blur effect using frame accumulation shader."""
+        if not self.is_setup:
+            return
+        blur_vert = """
+        #version 120
+        void main() {
+            gl_Position = ftransform();
+            gl_TexCoord[0] = gl_MultiTexCoord0;
+        }
+        """
+        blur_frag = """
+        #version 120
+        uniform sampler2D tex;
+        uniform sampler2D prevTex;
+        uniform float strength;
+        void main() {
+            vec2 uv = gl_TexCoord[0].st;
+            vec4 current = texture2D(tex, uv);
+            vec4 previous = texture2D(prevTex, uv);
+            gl_FragColor = mix(current, previous, strength);
+        }
+        """
+        self.motion_blur_shader = Shader.make(Shader.SL_GLSL, blur_vert, blur_frag)
+        self.post_quad.set_shader(self.motion_blur_shader)
+        self.post_quad.set_shader_input('tex', self.scene_tex)
+        self.post_quad.set_shader_input('prevTex', self.scene_tex)
+        self.post_quad.set_shader_input('strength', strength)
+        self.motion_blur_enabled = True
 
 
 class CinematicEffects:
@@ -200,18 +225,101 @@ class CinematicEffects:
         self.depth_of_field_active = False
         self.color_grading_active = False
         self._vignette_quad = None
+        self._color_grade_quad = None
+        
+    def enable_color_grading(self, preset='neutral'):
+        """Apply color grading via a fullscreen post-process shader."""
+        if self._color_grade_quad:
+            return
+        
+        presets = {
+            'neutral': (1.0, 1.0, 1.0, 0.0, 0.0, 0.0),  # (contrast, saturation, brightness, r_shift, g_shift, b_shift)
+            'warm': (1.05, 1.1, 1.02, 0.05, 0.02, -0.02),
+            'cool': (1.05, 0.95, 1.0, -0.02, 0.0, 0.04),
+            'vibrant': (1.1, 1.3, 1.0, 0.0, 0.0, 0.0),
+        }
+        params = presets.get(preset, presets['neutral'])
+        
+        vert = """
+        #version 120
+        void main() {
+            gl_Position = ftransform();
+            gl_TexCoord[0] = gl_MultiTexCoord0;
+        }
+        """
+        frag = """
+        #version 120
+        uniform sampler2D tex;
+        uniform float contrast;
+        uniform float saturation;
+        uniform float brightness;
+        uniform vec3 colorShift;
+        void main() {
+            vec2 uv = gl_TexCoord[0].st;
+            vec4 color = texture2D(tex, uv);
+            // Contrast
+            color.rgb = (color.rgb - 0.5) * contrast + 0.5;
+            // Saturation
+            float gray = dot(color.rgb, vec3(0.299, 0.587, 0.114));
+            color.rgb = mix(vec3(gray), color.rgb, saturation);
+            // Brightness
+            color.rgb *= brightness;
+            // Color shift
+            color.rgb += colorShift;
+            gl_FragColor = clamp(color, 0.0, 1.0);
+        }
+        """
+        from panda3d.core import CardMaker, TransparencyAttrib, Shader
+        cm = CardMaker('color_grade')
+        cm.setFrameFullscreenQuad()
+        self._color_grade_quad = self.base.render2d.attachNewNode(cm.generate())
+        self._color_grade_quad.setTransparency(TransparencyAttrib.MNone)
+        self._color_grade_quad.setBin('fixed', 50)
+        self._color_grade_quad.setDepthTest(False)
+        self._color_grade_quad.setDepthWrite(False)
+        grade_shader = Shader.make(Shader.SL_GLSL, vert, frag)
+        self._color_grade_quad.setShader(grade_shader)
+        self._color_grade_quad.setShaderInput('tex', self.base.win.getTexture())
+        self._color_grade_quad.setShaderInput('contrast', params[0])
+        self._color_grade_quad.setShaderInput('saturation', params[1])
+        self._color_grade_quad.setShaderInput('brightness', params[2])
+        self._color_grade_quad.setShaderInput('colorShift', (params[3], params[4], params[5]))
+        self.color_grading_active = True
         
     def add_vignette(self, intensity=0.3):
-        """Add darkened edges for cinematic look."""
+        """Add darkened edges for cinematic look using a fullscreen shader quad."""
         if self._vignette_quad:
             return
-        from panda3d.core import CardMaker, TransparencyAttrib
+        vignette_vert = """
+        #version 120
+        void main() {
+            gl_Position = ftransform();
+            gl_TexCoord[0] = gl_MultiTexCoord0;
+        }
+        """
+        vignette_frag = """
+        #version 120
+        uniform float intensity;
+        void main() {
+            vec2 uv = gl_TexCoord[0].st;
+            vec2 center = uv - 0.5;
+            float dist = length(center);
+            float vignette = 1.0 - dist * intensity * 1.5;
+            vignette = smoothstep(0.0, 1.0, vignette);
+            gl_FragColor = vec4(0.0, 0.0, 0.0, (1.0 - vignette) * 0.85);
+        }
+        """
+        from panda3d.core import CardMaker, TransparencyAttrib, Shader
         cm = CardMaker('vignette')
         cm.setFrameFullscreenQuad()
         self._vignette_quad = self.base.render2d.attachNewNode(cm.generate())
         self._vignette_quad.setTransparency(TransparencyAttrib.MAlpha)
-        self._vignette_quad.setColor(0, 0, 0, intensity)
         self._vignette_quad.setBin('fixed', 100)
+        self._vignette_quad.setDepthTest(False)
+        self._vignette_quad.setDepthWrite(False)
+        vignette_shader = Shader.make(Shader.SL_GLSL, vignette_vert, vignette_frag)
+        self._vignette_quad.setShader(vignette_shader)
+        self._vignette_quad.setShaderInput('intensity', intensity)
 
 
 # Common post-processing presets

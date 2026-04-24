@@ -72,10 +72,10 @@ class WindPhysics:
         node.setP(new_p)
         
     def _simplex_noise(self, x, y, z=0):
-        """3D simplex noise function for natural turbulence."""
-        # Simplified noise implementation
-        # In a real implementation, this would use a proper noise library
-        return (random.random() - 0.5) * 2
+        """3D simplex-like noise function for natural turbulence using hashing."""
+        import math
+        n = math.sin(x * 12.9898 + y * 78.233 + z * 45.164) * 43758.5453
+        return (n - math.floor(n)) * 2.0 - 1.0
 
 
 class GrassField:
@@ -104,7 +104,7 @@ class GrassField:
     def _create_grass_mesh(self):
         """Create optimized grass blade geometry."""
         # Use instanced rendering for performance
-        format = GeomVertexFormat.getV3n3cpt2()
+        format = GeomVertexFormat.getV3n3c4t2()
         
         vdata = GeomVertexData('grass', format, Geom.UHStatic)
         vertex = GeomVertexWriter(vdata, 'vertex')
@@ -127,7 +127,7 @@ class GrassField:
             # Extract normal vector (x, y, z)
             normal.addData3f(v[3], v[4], v[5])
             # Extract color (r, g, b) - using the values directly here since they're per-vertex
-            color.addData3f(v[6], v[7], v[8])
+            color.addData4f(v[6], v[7], v[8], 1.0)
             # Extract texture coordinates (u, v)
             texcoord.addData2f(v[9], v[10])
             

@@ -595,6 +595,11 @@ class Animal(ABC):
         # Update position
         self.position += self.velocity * dt
         
+        # Enforce world boundaries (±140 units, matching player bounds)
+        world_bounds = 140.0
+        self.position.setX(max(-world_bounds, min(world_bounds, self.position.getX())))
+        self.position.setY(max(-world_bounds, min(world_bounds, self.position.getY())))
+        
         # Rotate animal to face movement direction
         if self.velocity.lengthSquared() > 0.01 and self.node:
             # Calculate heading from velocity

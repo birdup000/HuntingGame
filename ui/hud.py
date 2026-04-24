@@ -216,8 +216,8 @@ class HUD:
 
         self.ammo_bar = DirectWaitBar(
             parent=self.right_panel,
-            range=1.0,
-            value=1.0,
+            range=100.0,
+            value=100.0,
             frameSize=(-0.54, 0.54, -0.06, 0.06),
             pos=(0.0, 0, -0.02),
             barColor=(0.88, 0.74, 0.32, 0.95),
@@ -322,8 +322,8 @@ class HUD:
             current_ammo = weapon.current_ammo
             max_ammo = weapon.max_ammo
             self.ammo_text.setText(f"Ammo {current_ammo} / {max_ammo}")
-            ratio = 0.0 if max_ammo <= 0 else current_ammo / float(max_ammo)
-            self.ammo_bar['value'] = max(0.0, min(1.0, ratio))
+            ratio = (current_ammo / float(max_ammo) * 100.0) if max_ammo > 0 else 0.0
+            self.ammo_bar['value'] = max(0.0, min(100.0, ratio))
             if self._last_state['ammo'] != ratio:
                 self._last_state['ammo'] = ratio
                 changed = True

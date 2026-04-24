@@ -361,7 +361,10 @@ class BaseMenu:
         self.visible = True
 
     def setup_navigation(self):
-        """Setup keyboard navigation for accessibility."""
+        """Setup keyboard navigation for accessibility. Skip for SettingsMenu (sliders)."""
+        # SettingsMenu uses sliders that need arrow keys — skip nav bindings
+        if isinstance(self, SettingsMenu):
+            return
         # Find all buttons in elements
         buttons = [elem for elem in self.elements if isinstance(elem, DirectButton)]
         if buttons:
@@ -384,7 +387,8 @@ class BaseMenu:
                     
                     # Change focus style to show selection
                     for button in buttons:
-                        button.bind('focusIn', button.on_focus)
+                        if hasattr(button, 'on_focus'):
+                            button.bind('focusIn', button.on_focus)
                             
     def select_previous(self):
         """Select the previous button with proper scaling."""
@@ -465,8 +469,8 @@ class BaseMenu:
             if hasattr(element, 'hide'):
                 element.hide()
                 
-        # Cleanup navigation bindings
-        if hasattr(self, '_nav_bound'):
+        # Cleanup navigation bindings (only if not SettingsMenu)
+        if hasattr(self, '_nav_bound') and not isinstance(self, SettingsMenu):
             if hasattr(self.app, 'ignore'):
                 self.app.ignore('arrow_up')
                 self.app.ignore('arrow_down') 
@@ -608,10 +612,75 @@ class MainMenu(BaseMenu):
         self.add_button(
             "Quit Game",
             self.on_quit,
-            pos=(0, 0, y_start - (2 * button_spacing) - 0.1),
+            pos=(0, 0, y_start - (3 * button_spacing) - 0.1),
             scale=0.12,
             parent=self.button_panel
         )
+
+        self.add_button(
+            "Load Game",
+            self._on_load_game,
+            pos=(0, 0, y_start - (1.5 * button_spacing) - 0.1),
+            scale=0.1,
+            parent=self.button_panel
+        )
+
+    def _on_load_game(self):
+        """Show save slot selection for loading."""
+        from direct.gui.DirectGui import DirectFrame
+        self._load_dialog = DirectFrame(
+            parent=self.frame,
+            frameColor=(0.05, 0.08, 0.1, 0.95),
+            frameSize=(-0.7, 0.7, -0.4, 0.4),
+            pos=(0, 0, 0)
+        )
+        self._load_dialog.setTransparency(TransparencyAttrib.MAlpha)
+
+        def close_dialog():
+            if hasattr(self, '_load_dialog') and self._load_dialog:
+                self._load_dialog.destroy()
+                self._load_dialog = None
+
+        self.add_label("Select Save Slot", pos=(0, 0, 0.28), scale=0.08, parent=self._load_dialog, fg=self.title_color)
+
+        # Check save manager for existing saves
+        save_mgr = None
+        if hasattr(self.app, 'game') and hasattr(self.app.game, 'save_manager'):
+            save_mgr = self.app.game.save_manager
+
+        for slot in range(1, 4):
+            has_save = save_mgr and save_mgr.has_save(slot) if save_mgr else False
+            label = f"Slot {slot} — {'LOAD' if has_save else 'Empty'}" 
+            y = 0.15 - (slot - 1) * 0.15
+
+            def make_load(slot_num):
+                return lambda: self._load_slot(slot_num, close_dialog)
+
+            btn = self.add_button(
+                label,
+                make_load(slot),
+                pos=(0, 0, y),
+                scale=0.07,
+                parent=self._load_dialog
+            )
+            if has_save:
+                btn['frameColor'] = (0.18, 0.32, 0.2, 0.95)
+            else:
+                btn['frameColor'] = (0.15, 0.15, 0.18, 0.95)
+                btn['text_fg'] = (0.5, 0.5, 0.5, 1.0)
+
+        close_btn = self.add_button("Close", close_dialog, pos=(0, 0, -0.28), scale=0.07, parent=self._load_dialog)
+
+    def _load_slot(self, slot_num, close_dialog):
+        """Load game from a save slot and start playing."""
+        close_dialog()
+        if hasattr(self.app, 'game') and hasattr(self.app.game, 'save_manager'):
+            loaded = self.app.game.save_manager.load_game(self.app.game, slot=slot_num)
+            if loaded:
+                self.on_start_game()
+            else:
+                # Show error message
+                pass
 
     def _update_difficulty_label(self, difficulty: str):
         """Visually highlight the selected difficulty button."""
@@ -683,11 +752,69 @@ class PauseMenu(BaseMenu):
         )
 
         self.add_button(
-            "Quit Game",
-            self.on_quit,
-            pos=(0, 0, y_start - (3 * button_spacing)),
+            "Save Game",
+            self._on_save_game,
+            pos=(0, 0, y_start - (3.5 * button_spacing)),
             scale=0.1
         )
+
+        self.add_button(
+            "Quit Game",
+            self.on_quit,
+            pos=(0, 0, y_start - (4.5 * button_spacing)),
+            scale=0.1
+        )
+
+    def _on_save_game(self):
+        """Show save slot selection dialog for saving."""
+        if not hasattr(self.app, 'game') or not self.app.game or not getattr(self.app.game, 'save_manager', None):
+            return
+
+        save_mgr = self.app.game.save_manager
+        from direct.gui.DirectGui import DirectFrame
+        self._save_dialog = DirectFrame(
+            parent=self.frame,
+            frameColor=(0.05, 0.08, 0.1, 0.95),
+            frameSize=(-0.7, 0.7, -0.4, 0.4),
+            pos=(0, 0, 0)
+        )
+        self._save_dialog.setTransparency(TransparencyAttrib.MAlpha)
+
+        def close_dialog():
+            if hasattr(self, '_save_dialog') and self._save_dialog:
+                self._save_dialog.destroy()
+                self._save_dialog = None
+
+        self.add_label("Save Game — Choose Slot", pos=(0, 0, 0.28), scale=0.08, parent=self._save_dialog, fg=self.title_color)
+
+        for slot in range(1, 4):
+            has_save = save_mgr.has_save(slot)
+            label = f"Slot {slot}  {'(overwrite)' if has_save else '(empty)'}"
+            y = 0.15 - (slot - 1) * 0.15
+
+            def make_save(slot_num):
+                return lambda: self._save_to_slot(slot_num, close_dialog)
+
+            btn = self.add_button(
+                label,
+                make_save(slot),
+                pos=(0, 0, y),
+                scale=0.07,
+                parent=self._save_dialog
+            )
+            if has_save:
+                btn['frameColor'] = (0.5, 0.2, 0.2, 0.95)
+
+        close_btn = self.add_button("Cancel", close_dialog, pos=(0, 0, -0.28), scale=0.07, parent=self._save_dialog)
+
+    def _save_to_slot(self, slot_num, close_dialog):
+        """Save game to a specific slot."""
+        close_dialog()
+        if hasattr(self.app, 'game') and self.app.game and getattr(self.app.game, 'save_manager', None):
+            saved = self.app.game.save_manager.save_game(self.app.game, slot=slot_num)
+            if saved:
+                if hasattr(self.app.game, 'ui_manager'):
+                    self.app.game.ui_manager.show_message(f"Game saved to Slot {slot_num}!", 2.0, (0.3, 1.0, 0.3, 1.0))
 
 
 class GameOverMenu(BaseMenu):

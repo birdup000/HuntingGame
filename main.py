@@ -89,6 +89,9 @@ class MainApp(ShowBase):
         if GRAPHICS_CONFIG['use_ssao']:
             self.post_processing.enable_ssao(ADVANCED_GRAPHICS['ssao_radius'])
 
+        # Enable vignette for cinematic look
+        self.cinematic.add_vignette(0.18)
+        
         logging.info("High-quality post-processing enabled")
 
 def main():

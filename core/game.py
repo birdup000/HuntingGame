@@ -617,6 +617,7 @@ class Game:
         """Pause the game and show pause menu with error handling."""
         try:
             self.game_state = 'paused'
+            self._pre_pause_game_time = self.game_time  # Freeze game time
             
             # Show mouse cursor for menu navigation
             try:
@@ -649,6 +650,10 @@ class Game:
     def resume_game(self):
         """Resume the game from pause."""
         self.game_state = 'playing'
+        
+        # Restore game time from pre-pause snapshot
+        if hasattr(self, '_pre_pause_game_time'):
+            self.game_time = self._pre_pause_game_time
         
         # Hide mouse cursor for first-person controls
         if hasattr(self.app, 'openPointer'):
@@ -729,24 +734,7 @@ class Game:
         except Exception as e:
             logging.error(f"Error during game quit: {e}")
 
-    def game_over(self):
-        """Handle game over state with error handling."""
-        try:
-            self.game_state = 'game_over'
 
-            # Update game over screen with final score
-            if self.ui_manager and self.ui_manager.hud:
-                hud = self.ui_manager.hud
-                self.ui_manager.update_game_over_score(hud.score, hud.kills, hud.accuracy)
-
-            if self.ui_manager:
-                self.ui_manager.show_menu('game_over')
-                self.ui_manager.toggle_hud_visibility(False)
-                logging.info("Game over screen shown")
-            else:
-                logging.warning("UI manager not available for game over screen")
-        except Exception as e:
-            logging.error(f"Error during game over: {e}")
 
     def spawn_animals(self):
         """Spawn initial animals in the game world using config values."""
@@ -988,13 +976,13 @@ class Game:
                     pass
 
                 # Apply settings sensitivity to player mouse
-                try:
-                    if self.ui_manager and self.ui_manager.settings_menu and self.player:
+                if self.ui_manager and getattr(self.ui_manager, 'settings_menu', None) and self.player:
+                    try:
                         sens = self.ui_manager.settings_menu.settings.get('sensitivity')
                         if sens is not None and abs(self.player.mouse_sensitivity - sens) > 0.001:
                             self.player.mouse_sensitivity = sens
-                except Exception:
-                    pass
+                    except Exception:
+                        pass
 
                 # Update animals
                 try:
@@ -1012,7 +1000,13 @@ class Game:
                                 species = getattr(animal, 'species', '')
                                 distance = (player_pos - animal.position).length()
                                 if species in ('bear', 'wolf') and distance < getattr(animal, 'attack_range', 8.0) and hasattr(animal, 'damage'):
-                                    self.player.take_damage(animal.damage * dt)
+                                    # Check if predator is facing the player before dealing damage
+                                    if animal.node:
+                                        facing_dir = animal.node.getQuat().getForward()
+                                        to_player = (player_pos - animal.position).normalized()
+                                        dot = facing_dir.dot(to_player) if facing_dir.length() > 0 else 0
+                                        if dot > -0.3:  # Predator must roughly face the player
+                                            self.player.take_damage(animal.damage * dt)
                             else:
                                 # Handle animal death - add score
                                 self.handle_animal_killed(animal)
@@ -1075,8 +1069,8 @@ class Game:
 
                 # Check for game over conditions (e.g., player health)
                 try:
-                    if self.player and hasattr(self.player, 'health') and self.player.health <= 0:
-                        self.game_over()
+                    if self.player and hasattr(self.player, 'health') and self.player.health <= 0 and self.game_state == 'playing':
+                        self._trigger_player_death()
                 except Exception as e:
                     logging.error(f"Error checking game over conditions: {e}")
 
@@ -1089,6 +1083,13 @@ class Game:
                 except Exception as e:
                     logging.debug(f"Animal respawn error: {e}")
 
+            # Handle death state separately (freeze gameplay, show timer)
+            if self.game_state == 'dead':
+                try:
+                    self._handle_death_state(dt)
+                except Exception as e:
+                    logging.error(f"Error in death state: {e}")
+            
             # Update UI regardless of game state
             try:
                 if self.ui_manager:
@@ -1374,6 +1375,34 @@ class Game:
                 logging.warning("UI manager not available for game over screen")
         except Exception as e:
             logging.error(f"Error during game over: {e}")
+
+    def _trigger_player_death(self):
+        """Handle player death with a short death screen before game over."""
+        self.game_state = 'dead'
+        self._death_timer = 3.0  # 3 second death screen
+        
+        if self.ui_manager:
+            self.ui_manager.show_message("YOU DIED", 3.0, (1.0, 0.1, 0.1, 1.0))
+        
+        # Show cursor
+        try:
+            if hasattr(self.app, 'openPointer'):
+                self.app.openPointer(1)
+            elif hasattr(self.app, 'enableMouse'):
+                self.app.enableMouse()
+        except Exception:
+            pass
+
+    def _handle_death_state(self, dt):
+        """Handle the death screen timer before transitioning to game over."""
+        self._death_timer -= dt
+        if self.ui_manager:
+            self.ui_manager.show_message(
+                f"Game Over in {max(1, int(self._death_timer))}...", 
+                0.5, (1.0, 0.2, 0.2, 1.0)
+            )
+        if self._death_timer <= 0:
+            self.game_over()
 
     def set_difficulty(self, difficulty: str):
         """Set game difficulty and apply config multipliers."""
