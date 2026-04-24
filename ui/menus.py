@@ -697,14 +697,17 @@ class MainMenu(BaseMenu):
         left, right, bottom, _top = self._get_fullscreen_frame_size()
         version_x = right - 0.35
         version_z = bottom + 0.18
-        self.add_label(
-            "Version 1.0",
-            pos=(version_x, 0, version_z),
-            scale=0.06,
-            parent=self.background,
-            align=TextNode.ARight,
-            fg=(0.78, 0.81, 0.77, 1.0)
-        )
+        if not hasattr(self, '_version_label'):
+            self._version_label = self.add_label(
+                "Version 1.0",
+                pos=(version_x, 0, version_z),
+                scale=0.06,
+                parent=self.background,
+                align=TextNode.ARight,
+                fg=(0.78, 0.81, 0.77, 1.0)
+            )
+        else:
+            self._version_label.setPos(version_x, 0, version_z)
 
 
 class PauseMenu(BaseMenu):

@@ -59,7 +59,8 @@ class MainApp(ShowBase):
         self.aspect2d.setBin('fixed', 60)  # Aspect2d for overlays renders last
             
         # Additional cleanup - ensure no stray debug visualization
-        self.disableAllAudio()  # Prevent debug sounds
+        # NOTE: Do NOT call disableAllAudio() here — it permanently kills
+        # the audio subsystem before AudioManager is created.
         
         # Initialize game after engine setup
         self.game = Game(self)

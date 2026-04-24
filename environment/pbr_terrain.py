@@ -310,19 +310,40 @@ class PBRTerrain:
         print(f"PBR Terrain generated: {self.width}x{self.height}, PBR materials applied")
     
     def get_height(self, x, y):
-        """Get terrain height at world coordinates."""
+        """Get terrain height at world coordinates using bilinear interpolation."""
         if self.height_map is None:
             return 0.0
         
-        # Convert world coordinates to height map indices
-        map_x = int(x + self.width // 2)
-        map_y = int(y + self.height // 2)
+        # Convert world coordinates to height map indices (float)
+        fx = x + self.width / 2.0
+        fy = y + self.height / 2.0
+        
+        # Get integer coordinates
+        x0 = int(math.floor(fx))
+        y0 = int(math.floor(fy))
+        x1 = x0 + 1
+        y1 = y0 + 1
         
         # Clamp to bounds
-        map_x = max(0, min(map_x, self.width))
-        map_y = max(0, min(map_y, self.height))
+        x0 = max(0, min(x0, self.width))
+        x1 = max(0, min(x1, self.width))
+        y0 = max(0, min(y0, self.height))
+        y1 = max(0, min(y1, self.height))
         
-        return self.height_map[map_x, map_y]
+        # Get interpolation factors
+        sx = fx - x0
+        sy = fy - y0
+        
+        # Bilinear interpolation
+        h00 = self.height_map[x0, y0]
+        h10 = self.height_map[x1, y0]
+        h01 = self.height_map[x0, y1]
+        h11 = self.height_map[x1, y1]
+        
+        h0 = h00 * (1 - sx) + h10 * sx
+        h1 = h01 * (1 - sx) + h11 * sx
+        
+        return h0 * (1 - sy) + h1 * sy
 
 
 class OptimizedTerrainRenderer:

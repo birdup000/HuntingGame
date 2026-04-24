@@ -177,11 +177,10 @@ class FoliageMaterial:
 def import_main_app():
     """Safely import main app reference."""
     try:
-        from main import main_app
-        return main_app
+        import main
+        return getattr(main, 'app', None)
     except ImportError:
-        # Fallback - would be set by MainApp at runtime
-        return getattr(MainApp, 'app', None)
+        return None
 
 
 # Predefined material presets for common elements

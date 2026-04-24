@@ -34,6 +34,7 @@ class AnimalState(Enum):
     HUNGRY = "hungry"
     DRINKING = "drinking"
     RESTING = "resting"
+    AGGRESSIVE = "aggressive"
     DEAD = "dead"
 
 
@@ -877,10 +878,17 @@ class Bear(Animal):
         # Bears become alerted at longer range and may attack instead of flee
         distance = (player_position - self.position).length()
         if distance <= self.attack_range and self.is_aggressive:
-            self.state = AnimalState.FLEEING  # Reuse fleeing state for charging
+            self.state = AnimalState.AGGRESSIVE
             self.state_timer = 0.0
-            # Charge toward player instead of away
+            # Charge toward player
             self.velocity = (player_position - self.position).normalized() * self.speed * 1.2
+            # Update node position and skip base class movement logic
+            if self.node:
+                self.position.setZ(terrain_height + self.height_offset)
+                self.node.setPos(self.position)
+                # Face player
+                self.node.lookAt(player_position.x, player_position.y, self.position.z)
+            return
         super().update(dt, player_position, terrain_height, food_positions, water_positions, nearby_animals)
 
 

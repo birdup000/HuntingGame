@@ -520,6 +520,9 @@ class Game:
 
     def save_game(self):
         """Save the current game state."""
+        if self.game_state != 'playing':
+            logging.debug("Cannot save outside of gameplay")
+            return
         if self.save_manager:
             if self.save_manager.save_game(self, slot=1):
                 if self.ui_manager:
@@ -530,6 +533,9 @@ class Game:
 
     def load_game(self):
         """Load the game state from save."""
+        if self.game_state != 'playing':
+            logging.debug("Cannot load outside of gameplay")
+            return
         if self.save_manager and self.save_manager.has_save(1):
             if self.save_manager.load_game(self, slot=1):
                 if self.ui_manager:
@@ -796,6 +802,8 @@ class Game:
         # Spawn birds (flying, so higher z)
         for x, y in _spawn_positions(animal_cfg.get('bird_count', 12), [(0, 0), (30, 30), (-30, -30), (40, -20)]):
             bird = Bird(Vec3(x, y, 0))
+            # Birds set their own flight height in __init__, but position.z needs to be set after creation
+            bird.position.z = bird.flight_height
             bird.render(self.app.render)
             self.animals.append(bird)
 
@@ -928,7 +936,7 @@ class Game:
             if not self.is_running:
                 return task.done
 
-            # Calculate delta time
+            # Calculate delta time with clamping to prevent physics explosions
             try:
                 if hasattr(self.app.taskMgr, 'globalClock'):
                     current_time = self.app.taskMgr.globalClock.getFrameTime()
@@ -943,6 +951,9 @@ class Game:
             except Exception as e:
                 logging.error(f"Error calculating delta time: {e}")
                 dt = 0.016
+            
+            # Clamp dt to prevent instability during lag spikes (max 100ms = 10 FPS minimum)
+            dt = min(dt, 0.1)
 
             # Only update game components if actively playing
             if self.game_state == 'playing':
@@ -1000,13 +1011,20 @@ class Game:
                                 species = getattr(animal, 'species', '')
                                 distance = (player_pos - animal.position).length()
                                 if species in ('bear', 'wolf') and distance < getattr(animal, 'attack_range', 8.0) and hasattr(animal, 'damage'):
-                                    # Check if predator is facing the player before dealing damage
-                                    if animal.node:
-                                        facing_dir = animal.node.getQuat().getForward()
-                                        to_player = (player_pos - animal.position).normalized()
-                                        dot = facing_dir.dot(to_player) if facing_dir.length() > 0 else 0
-                                        if dot > -0.3:  # Predator must roughly face the player
-                                            self.player.take_damage(animal.damage * dt)
+                                    # Damage cooldown — prevent instant death from frame-rate damage
+                                    cooldown_attr = '_predator_damage_cooldown'
+                                    current_cooldown = getattr(self.player, cooldown_attr, 0.0)
+                                    if current_cooldown <= 0:
+                                        # Check if predator is facing the player before dealing damage
+                                        if animal.node:
+                                            facing_dir = animal.node.getQuat().getForward()
+                                            to_player = (player_pos - animal.position).normalized()
+                                            dot = facing_dir.dot(to_player) if facing_dir.length() > 0 else 0
+                                            if dot > -0.3:  # Predator must roughly face the player
+                                                self.player.take_damage(animal.damage)
+                                                setattr(self.player, cooldown_attr, 1.0)  # 1 second cooldown
+                                    else:
+                                        setattr(self.player, cooldown_attr, current_cooldown - dt)
                             else:
                                 # Handle animal death - add score
                                 self.handle_animal_killed(animal)
@@ -1242,6 +1260,7 @@ class Game:
             
             self.ui_manager.add_score(points)
             self.ui_manager.record_shot(hit=True)
+            self.ui_manager.record_kill()
             self.ui_manager.hud.register_animal_kill(species if isinstance(species, str) else '')
             
             # Grant XP to player
@@ -1419,6 +1438,8 @@ class Game:
 
     def cleanup_game(self):
         """Clean up current game session for restart."""
+        # Reset game time
+        self.game_time = 0.0
         # Clean up animals
         for animal in self.animals:
             if self.player:
@@ -1445,6 +1466,15 @@ class Game:
             if hasattr(self.ui_manager, 'hud') and self.ui_manager.hud:
                 self.ui_manager.hud.cleanup()
                 self.ui_manager.hud = None
+
+        # Clean up rocks
+        for rock in self.rocks:
+            if hasattr(rock, 'removeNode'):
+                try:
+                    rock.removeNode()
+                except:
+                    pass
+        self.rocks.clear()
 
         self.animal_targets.clear()
         self._pending_objective_counts = {}

@@ -573,7 +573,11 @@ class HUD:
         self.shots_fired += 1
         if hit:
             self.shots_hit += 1
-            self.kills += 1
+        self._idle_time = 0.0
+
+    def record_kill(self):
+        """Record an animal kill (separate from hit tracking)."""
+        self.kills += 1
         self._idle_time = 0.0
 
     def show_hit_marker(self):

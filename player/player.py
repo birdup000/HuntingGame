@@ -6,7 +6,7 @@ Handles player character, controls, and inventory.
 import logging
 from panda3d.core import Vec3, Point3, CollisionNode, CollisionSphere, CollisionTraverser, CollisionHandlerQueue
 from direct.task import Task
-from typing import List, Optional
+from typing import List, Optional, Dict
 from physics.collision import CollisionManager, Projectile
 
 
@@ -647,33 +647,34 @@ class Player:
         # Consume stamina when sprinting (handled in movement)
 
     def shoot(self):
-        """Handle shooting input with advanced weapon mechanics."""
+        """Handle shooting input with magazine-based ammo system."""
         if self.camera_node is None or not hasattr(self.app, 'taskMgr') or not self.current_weapon:
             return
 
         current_time = self.app.taskMgr.globalClock.getFrameTime()
 
-        # Check if weapon has ammo
-        ammo_type = f"{self.current_weapon.weapon_type}_ammo"
-        if self.current_weapon.weapon_type == "bow":
-            ammo_type = "arrow"
-            
-        if self.inventory.get_ammo(ammo_type) <= 0:
-            logging.warning(f"Out of {ammo_type}!")
+        # Check magazine first — realistic weapon behavior
+        if self.current_weapon.current_ammo <= 0:
+            logging.warning(f"Magazine empty! Press R to reload.")
+            # Play empty click sound
+            try:
+                if hasattr(self.app, 'game') and self.app.game and hasattr(self.app.game, 'audio_manager') and self.app.game.audio_manager:
+                    self.app.game.audio_manager.play_empty_click()
+            except Exception:
+                pass
             return
 
         # Calculate shot origin and direction
         if hasattr(self.app, 'render'):
             shot_origin = self.camera_node.getPos(self.app.render)
         else:
-            shot_origin = self.position + Vec3(0, 0, 2)  # Default position if render not available
+            shot_origin = self.position + Vec3(0, 0, 2)
 
         shot_direction = self.camera_node.getQuat().getForward()
 
         # Apply accuracy based on weapon and zoom
         accuracy = self.current_weapon.get_accuracy()
         if accuracy < 1.0:
-            # Add spread based on accuracy
             import random
             spread = Vec3(
                 random.uniform(-0.5, 0.5) * (1.0 - accuracy),
@@ -683,15 +684,11 @@ class Player:
             shot_direction += spread
             shot_direction.normalize()
 
-        # Attempt to shoot
+        # Attempt to shoot — this decrements weapon.current_ammo
         projectile = self.current_weapon.shoot(shot_origin, shot_direction, current_time)
         if projectile:
             self.projectiles.append(projectile)
-            # Add projectile to collision manager
             self.collision_manager.add_projectile(projectile)
-            
-            # Consume ammo
-            self.inventory.add_ammo(ammo_type, -1)
             
             # Apply recoil
             self.recoil_pitch = 2.5 if self.current_weapon.weapon_type == 'rifle' else 1.5 if self.current_weapon.weapon_type == 'pistol' else 1.0
@@ -707,7 +704,7 @@ class Player:
             except Exception:
                 pass
             
-            logging.debug(f"Shot fired with {self.current_weapon.name}! Ammo remaining: {self.inventory.get_ammo(ammo_type)}")
+            logging.debug(f"Shot fired with {self.current_weapon.name}! Mag: {self.current_weapon.current_ammo}/{self.current_weapon.max_ammo}")
 
     def reload_weapon(self):
         """Handle weapon reload input. Ammo is transferred only when reload timer completes."""

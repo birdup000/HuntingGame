@@ -174,7 +174,7 @@ class AudioManager:
         if rain:
             if weather_type in ('rain', 'storm'):
                 rain.setVolume(strength * self.ambient_volume * self.master_volume)
-                if not rain.status() == AudioSound.PLAYING:
+                if rain.status() != AudioSound.PLAYING:
                     rain.play()
             else:
                 rain.stop()

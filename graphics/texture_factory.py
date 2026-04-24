@@ -21,7 +21,9 @@ def _lerp(a: Sequence[float], b: Sequence[float], t: float) -> tuple:
 
 
 def _hash_noise(x: int, y: int) -> float:
-    return math.fmod(math.sin(x * 12.9898 + y * 78.233) * 43758.5453, 1.0)
+    value = math.fmod(math.sin(x * 12.9898 + y * 78.233) * 43758.5453, 1.0)
+    # Normalize to [0, 1] since fmod can return negative values
+    return (value + 1.0) % 1.0
 
 
 def _perlin_like_noise(x: float, y: float, frequency: float = 1.0) -> float:

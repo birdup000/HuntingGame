@@ -107,7 +107,7 @@ class CollisionManager:
             collision_node = CollisionNode(f"animal_collision_{id(animal)}")
             collision_node.addSolid(CollisionSphere(0, 0, 0, 1.0))  # Simple sphere collision
             collision_node.setFromCollideMask(self.PROJECTILE_MASK)
-            collision_node.setIntoCollideMask(BitMask32.allOff())
+            collision_node.setIntoCollideMask(self.ANIMAL_MASK)
 
             # Attach to animal node and set Python tag
             if hasattr(animal, 'node') and animal.node:
